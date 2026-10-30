@@ -10,7 +10,8 @@ Licença: BSD 3-Clause, Copyright (c) 2024, lzhoang2601. Veja [`LICENSE`](LICENS
 |---|---|---|
 | `Scripts/datasets/os_data.py` (catálogo do macOS) | `internal/macos` | Implementado e testado contra o Python |
 | `Scripts/utils.py` (`parse_darwin_version`) | `internal/macos` | Implementado e testado contra o Python |
-| `Scripts/datasets/mac_model_data.py` + `smbios.select_smbios_model` | — | Pendente |
+| `Scripts/datasets/mac_model_data.py` (tabela `mac_devices`) | `internal/smbios` | Implementado e testado contra o Python (gerado a partir do original) |
+| `smbios.SMBIOS.select_smbios_model` | `internal/smbios` | Implementado e testado contra o Python (38.880 casos) |
 | `Scripts/compatibility_checker.py` + datasets de CPU/GPU/chipset/PCI | — | Pendente |
 | Detecção de hardware (`Report.json` / Hardware Sniffer) | — | Pendente |
 | `Scripts/acpi_guru.py`, `dsdt.py`, `datasets/acpi_patch_data.py` | — | Pendente |
@@ -75,9 +76,30 @@ Requer Go 1.24 ou superior e, para o teste de paridade, `python3`.
 4. **Sufixo " (Beta)"**: o Go implementa o caminho, mas nenhuma entrada beta existe hoje no catálogo, então esse trecho não é exercitado pelo teste de paridade.
 5. **Escopo**: só o módulo `macos` é portado. O menu interativo, a atualização automática, o download e a interface do original ainda não existem em Go.
 
+## Módulo implementado: `internal/smbios` (seleção de modelo)
+
+- `devices_gen.go`: tabela `mac_devices` (77 modelos). É gerada por `tools/gen_mac_devices.py` a partir de `Scripts/datasets/mac_model_data.py`, então não é transcrita à mão. `devices.go` define o tipo `Device`, `Devices()` e `DeviceByName()`.
+- `select.go`: `SelectDefaultModel(report, macosVersion)`, equivalente a `select_smbios_model`. O `HardwareReport` contém só os campos usados pelo original: placa-mãe (nome e plataforma), CPU (codename, nome do processador e número de núcleos) e a lista ordenada de GPUs.
+- Avaliação preguiçosa igual à do Python: a versão do macOS só é parseada, e a GPU só é lida, nos ramos em que o original faria isso. Um erro aparece só onde o Python também falharia. Caso contrário, o `Laptop` sem GPU retornaria um modelo, como no original.
+
+### Como a equivalência é verificada
+
+`internal/smbios/parity_test.go` executa `testdata/pyref_smbios.py`, que chama o `select_smbios_model` original sem alterações. A matriz tem 38.880 casos: 4 combinações de placa, 24 codenames (incluindo um desconhecido), 3 nomes de processador (um deles com `-8`, que muda o ramo do MacBook Pro), 5 conjuntos de GPUs, 3 contagens de núcleos e 9 versões do macOS (incluindo uma malformada). O teste também compara a tabela de dispositivos inteira.
+
+Verificação de sensibilidade: alterando de propósito o `Macmini7,1` do ramo Haswell/NUC, o teste reportou divergências e foi restaurado em seguida.
+
+`tools/gen_mac_devices.py` gera o arquivo com a mesma saída committed. A conferência foi feita com `diff`.
+
+### Diferenças e limitações do módulo
+
+1. `DiscreteGPU` vazio representa `None` do Python.
+2. `CoreCount` é `int`. O original faz `int(...)` sobre o valor do relatório. Um valor ausente é tratado como 0, e não gera erro como no Python.
+3. A seleção cobre só o modelo padrão. `customize_smbios_model`, `smbios_specific_options` (que decide NoTouchID e RestrictEvents) e a interface interativa não estão portados.
+4. Geração de serial, MLB, ROM e UUID (`generate_smbios`) não foi portada. Depende do `macserial` e de download.
+
 ## Próxima etapa sugerida
 
-Portar `mac_model_data.py` (tabela `mac_devices`) e a função pura `select_smbios_model` de `smbios.py`, sem a parte de geração de serial, que depende de subprocesso (`macserial`) e de download. A paridade seguirá o mesmo padrão: o Python original é o oráculo, com entradas de `Report.json` sintéticas, mas documentadas, e os resultados são comparados caso a caso.
+Portar a geração de SMBIOS (`generate_smbios`): `generate_random_mac` e o formato `MLB`/`SystemSerialNumber` com os valores de fallback. O `macserial` é um binário externo. Antes de implementar, é preciso decidir como ele será invocado em cada plataforma e como o fallback será testado sem executá-lo. Depois, as regras de compatibilidade (`compatibility_checker.py`).
 
 ## Créditos
 
