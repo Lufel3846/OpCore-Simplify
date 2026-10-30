@@ -8,6 +8,7 @@ package datasets
 
 import (
 	"fmt"
+	"math/rand"
 
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/plist"
 )
@@ -32,6 +33,9 @@ type KextInfo struct {
 	AllowForceLoad   bool
 	GithubRepo       *Repo
 	DownloadInfo     *plist.Dict
+	// RandomDownloadID marks entries whose download id the Python module draws at
+	// import time (9 random digits). NewCatalog draws a new one for each copy.
+	RandomDownloadID bool
 	// Checked is the selection state. The constructor sets it to Required.
 	Checked bool
 }
@@ -52,10 +56,18 @@ func NewCatalog() []*KextInfo {
 		}
 		if k.DownloadInfo != nil {
 			c.DownloadInfo = copyDict(k.DownloadInfo)
+			if k.RandomDownloadID {
+				c.DownloadInfo.Set("id", randomDownloadID())
+			}
 		}
 		out[i] = &c
 	}
 	return out
+}
+
+// randomDownloadID mirrors int("".join(random.choices('0123456789', k=9))).
+func randomDownloadID() int64 {
+	return rand.Int63n(1000000000)
 }
 
 func copyDict(d *plist.Dict) *plist.Dict {
@@ -115,4 +127,25 @@ func (s SubsystemIDs) Value() any {
 type USBControllerEntry struct {
 	Device    string
 	Subsystem SubsystemIDs
+}
+
+// IDEntry is one key and value of a pci_data dictionary. Lookups are in
+// insertion order, as Python's dict.get and "in" are.
+type IDEntry struct {
+	Key   string
+	Value SubsystemIDs
+}
+
+// LookupID returns the value stored under key, and whether the key exists.
+func LookupID(entries []IDEntry, key any) (SubsystemIDs, bool) {
+	s, ok := key.(string)
+	if !ok {
+		return SubsystemIDs{}, false
+	}
+	for _, e := range entries {
+		if e.Key == s {
+			return e.Value, true
+		}
+	}
+	return SubsystemIDs{}, false
 }

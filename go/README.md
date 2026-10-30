@@ -26,7 +26,8 @@ Licença: BSD 3-Clause, Copyright (c) 2024, lzhoang2601. Veja [`LICENSE`](LICENS
 | `kext_maestro.py` (seleção, verificação, instalação, `load_kexts`) | `internal/kextmaestro` | Implementado e testado contra o Python. Menu interativo e Wi-Fi via `wifi_profile_extractor` pendentes (ver abaixo) |
 | `kext_data.py`, `pci_data.py`, `cpu_data.py`, `codec_layouts.py` | `internal/datasets` | Gerados a partir do Python por `tools/gen_datasets.py` (dicionários do `pci_data` ainda não gerados) |
 | Semântica de Python usada pelos módulos (`dict.get`, `in`, `len`, `int()`, `==`, truthiness) | `internal/pyrt` | Testado contra o Python operador a operador |
-| `config_prodigy.py`, `build_opencore_efi` | — | Pendente |
+| `config_prodigy.py` (`genarate` e blocos de DeviceProperties, Kernel, Booter, NVRAM, UEFI) | `internal/config` | Implementado e comparado byte a byte com o `plistlib` do original em 300 relatórios (250 completos, 50 que falham nos dois lados). Ganchos para layout de áudio, patches remotos e serial (ver abaixo) |
+| `build_opencore_efi` (montagem da pasta EFI e limpeza) | — | Pendente |
 | GUI (Wails) | — | Não iniciado |
 
 Não há pacotes vazios nem placeholders: um pacote só entra no repositório quando tem implementação e testes.
@@ -178,17 +179,48 @@ Pacotes: `internal/kextmaestro`, `internal/datasets` (gerado), `internal/pyrt`. 
 5. **`int()` com dígitos não ASCII**: o Python aceita `٢٥`; o `pyrt` aceita só `0-9`. O caso fica fora da paridade.
 6. **Dicionários do `pci_data`** (`SpoofGPUIDs`, `ChromebookIDs`, `ThinkPadTWX30IDs`, `UnsupportedNVMeSSDIDs`) ainda não foram gerados. Não são usados pelo `kext_maestro`, mas serão necessários no `config_prodigy`.
 7. **Dois tipos de kext**: `gathering.Kext` e `datasets.KextInfo` representam o mesmo conceito, com campos sobrepostos. Unificar é uma refatoração pendente.
+8. **IDs de download sorteados na importação**: `kext_data.py` sorteia dois IDs de 9 dígitos (SMCRadeonSensors e NootRX) a cada importação. O gerador detecta isso recarregando o módulo, e o Go sorteia os mesmos campos em `datasets.NewCatalog`. Assim, como no original, esses dois kexts não reconhecem a versão baixada e são baixados de novo.
+
+## Módulo implementado: `internal/config` (`config_prodigy.py`)
+
+`Genarate` percorre as atribuições do original na mesma ordem e produz o config.plist a partir do `Sample.plist` do OpenCorePkg 1.0.9. A saída é um plist, e a comparação é **byte a byte** com `plistlib.dumps` do original.
+
+### Como a equivalência é verificada
+
+`parity_test.go` gera 300 relatórios de hardware com semente fixa. Os pools vêm dos datasets gerados, então cobrem: GOOGLE e ThinkPad (listas de IDs de subsistema), chipsets Intel, AMD e TRX, UEFI, Legacy e desconhecido, desktop, laptop e NUC, iGPUs de todas as famílias (0042 a 8A), GPUs discretas com e sem spoof, monitores em várias resoluções, Wi-Fi Broadcom/Atheros/Intel/Aquantia, layout de áudio, versões do macOS de 19.0 a 25.0 mais uma inválida, e subconjuntos aleatórios de kexts.
+
+- 250 casos completam nos dois lados, com 246 tamanhos de arquivo distintos, ou seja, configs de fato diferentes.
+- 50 casos levantam erro nos dois lados (29 `ValueError` do macOS inválido, 13 `AttributeError` e 8 `KeyError`, como o original, por exemplo um iGPU com ID desconhecido sem propriedades).
+- Mutações pontuais (uma constante de iGPU e a condição de `-igfxvesa`) foram detectadas e restauradas.
+
+Os helpers de hex (`hex_to_bytes` devolve bytes ou a própria string), `to_little_endian_hex` (que usa `lstrip("0x")` como conjunto de caracteres) e `contains_any` (que devolve o primeiro autor, não um booleano) replicam o `utils.py` original.
+
+### Ganchos (dependências externas, injetadas)
+
+1. **Serial SMBIOS** (`generate_smbios`, via `macserial`): `GenerateSMBIOS` é obrigatório. Sem ele, `Genarate` retorna `ErrSerialNotPorted`. Os testes fornecem valores fixos nos dois lados.
+2. **Layout de áudio** (`random.choice` e prompt): `Choose` e `RequestInput`. O default de produção é `math/rand` e entrada padrão; os testes fixam o primeiro candidato e a resposta vazia.
+3. **Patches do kernel** (`get_kernel_patches`): `KernelPatches`. O `NewProdigy` liga isso ao `gathering.GetKernelPatches`, que já está portado e baixa os plists remotos. Os testes usam `testdata/patches.plist`.
+
+### Diferenças conhecidas
+
+1. Saída de terminal dos prompts não é reproduzida; a sequência de perguntas é a mesma.
+2. Dígitos Unicode não ASCII em `int()` (já documentado em `pyrt`).
+3. `build_opencore_efi` (montagem da pasta EFI) ainda não existe. Por isso o config é gerado, mas a EFI não é montada.
+
+### Créditos
+
+O `testdata/Sample.plist` é o `Docs/Sample.plist` do OpenCorePkg 1.0.9 (Acidanthera, BSD 3-Clause). O `patches.plist` é um fixture sintético de teste, não um patch real.
 
 ## Próxima etapa sugerida
 
-1. `config_prodigy.genarate` sobre `internal/plist` e os resultados de `kextmaestro`, com paridade contra o original. Ele também precisa dos dicionários do `pci_data` mencionados acima.
-2. Montagem da pasta EFI e limpeza de drivers e ferramentas não usados, como em `build_opencore_efi`.
-3. `wifi_profile_extractor`, para fechar o gancho `WifiProfiles`.
+1. `build_opencore_efi`: copiar a base do OpenCorePkg, aplicar os patches ACPI e os kexts, gravar o config e limpar drivers, recursos e ferramentas que não são usados.
+2. Serial SMBIOS (`generate_smbios`): `generate_random_mac` e o `macserial` (ou a porta dele), para remover o gancho obrigatório.
+3. `wifi_profile_extractor`, para fechar o gancho `WifiProfiles` do `kextmaestro`.
 4. `acpi_guru` por último, porque é o maior módulo.
 
-Os passos 1 e 2 produzem uma EFI completa sem ACPI personalizado. O passo 4 é o que falta para a paridade total.
+Com os passos 1 e 2, a EFI fica completa sem ACPI personalizado.
 
 ## Créditos
 
 - [OpCore Simplify](https://github.com/lzhoang2801/OpCore-Simplify) (lzhoang2801), BSD 3-Clause.
-- [OpenCorePkg](https://github.com/acidanthera/OpenCorePkg) (Acidanthera) e a [Dortania Guide](https://dortania.github.io/OpenCore-Install-Guide/), usados como referência pelo projeto original.
+- [OpenCorePkg](https://github.com/acidanthera/OpenCorePkg) (Acidanthera, BSD 3-Clause), cujo `Sample.plist` é usado como base em `internal/config/testdata`, e a [Dortania Guide](https://dortania.github.io/OpenCore-Install-Guide/), usados como referência pelo projeto original.
