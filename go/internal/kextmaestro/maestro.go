@@ -28,7 +28,7 @@ import (
 
 // ErrWifiProfilesNotPorted is returned when a WiFiConfig must be filled from the
 // stored Wi-Fi profiles, which need wifi_profile_extractor.py (not ported yet).
-var ErrWifiProfilesNotPorted = errors.New("Wi-Fi profile extraction (wifi_profile_extractor) is not ported yet")
+var ErrWifiProfilesNotPorted = errors.New("Wi-Fi profiles are needed (WiFiConfig is set) but WifiProfiles is not configured")
 
 // ACPIPatch is the part of an ACPI patch used here: its name and checked state.
 type ACPIPatch struct {

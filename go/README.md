@@ -212,6 +212,14 @@ Os helpers de hex (`hex_to_bytes` devolve bytes ou a própria string), `to_littl
 
 O `testdata/Sample.plist` é o `Docs/Sample.plist` do OpenCorePkg 1.0.9 (Acidanthera, BSD 3-Clause). O `patches.plist` é um fixture sintético de teste, não um patch real.
 
+## Módulo implementado: `internal/wifi` (`wifi_profile_extractor.py`)
+
+Porta o `wifi_profile_extractor`: classifica o tipo de autenticação (open, wep, wpa), valida a senha (8 a 63 caracteres ASCII imprimíveis, ou vazia para rede aberta), pergunta quantas redes ler, percorre as redes preferidas por sistema (`security` no macOS, `netsh` no Windows, `nmcli` no Linux) e devolve os pares `[ssid, senha]`. `Extractor.Pairs()` é o gancho `WifiProfiles` do `kextmaestro`.
+
+`parity_test.go` roda cerca de 40 cenários contra o `wifi_profile_extractor` original (`testdata/pyref_wifi.py`), com comandos e respostas de terminal fixos: autenticação, validação de senha, contagem de redes, senhas no macOS, Windows e Linux, e o laço principal com desistência após três falhas. Os resultados e os prompts são comparados.
+
+**Limitação:** `netsh`, `nmcli`, `networksetup` e `security` **não foram executados** de verdade nesta sessão; os comandos são simulados nos dois lados. Os prompts e a saída de terminal não são reproduzidos byte a byte; `Run` e `Input` são injetados.
+
 ## Módulos implementados: `internal/efi` e serial SMBIOS
 
 ### Serial SMBIOS (`internal/smbios/serial.go`)
@@ -233,7 +241,7 @@ Porta `build_opencore_efi`: cria a pasta de resultado, copia o OpenCorePkg, zera
 1. **ACPI não portado.** No original, `ensure_dsdt()` pode abrir um prompt para escolher tabelas ACPI, e os patches ACPI dependem do `acpi_guru.py`, que não está portado. O Go exige que o chamador declare `ACPIUnavailable`, que equivale ao `ensure_dsdt()` retornar `False`. Sem essa declaração, o build retorna `ErrACPINotPorted`. Hardware que precisa de patches de DSDT **não pode ser montado** ainda.
 2. **Serial real não verificado** (ver acima).
 3. **Sem comando de build na CLI.** A CLI expõe só os comandos `macos`. Hoje o build é uma API Go, testada, mas ainda não exposta ao usuário.
-4. **Wi-Fi do `kextmaestro`**: quando um `WiFiConfig` está preenchido, o build falha com `ErrWifiProfilesNotPorted` (`wifi_profile_extractor` não portado).
+4. **Wi-Fi do `kextmaestro`**: o gancho `WifiProfiles` é ligado ao `internal/wifi`. Sem ele configurado, um `WiFiConfig` preenchido falha com `ErrWifiProfilesNotPorted`.
 5. Os prompts e a saída de terminal não são reproduzidos; a sequência de respostas é a mesma.
 
 ## Próxima etapa sugerida
@@ -241,20 +249,7 @@ Porta `build_opencore_efi`: cria a pasta de resultado, copia o OpenCorePkg, zera
 1. **`acpi_guru.py`**, o maior módulo, para que a EFI de hardware com DSDT também possa ser montada. Sem ele, a montagem é completa apenas para sistemas que não precisam de patches ACPI.
 2. **Comando `build` na CLI**, ligando o seletor de hardware (relatório JSON), a compatibilidade, o modelo SMBIOS e a montagem.
 3. **Verificação do `macserial` real**, quando você aprovar a execução do binário.
-4. **`wifi_profile_extractor`**, para fechar o gancho do Wi-Fi.
-
-## Créditos
-
-O `testdata/Sample.plist` é o `Docs/Sample.plist` do OpenCorePkg 1.0.9 (Acidanthera, BSD 3-Clause). O `patches.plist` é um fixture sintético de teste, não um patch real.
-
-## Próxima etapa sugerida
-
-1. `build_opencore_efi`: copiar a base do OpenCorePkg, aplicar os patches ACPI e os kexts, gravar o config e limpar drivers, recursos e ferramentas que não são usados.
-2. Serial SMBIOS (`generate_smbios`): `generate_random_mac` e o `macserial` (ou a porta dele), para remover o gancho obrigatório.
-3. `wifi_profile_extractor`, para fechar o gancho `WifiProfiles` do `kextmaestro`.
-4. `acpi_guru` por último, porque é o maior módulo.
-
-Com os passos 1 e 2, a EFI fica completa sem ACPI personalizado.
+4. **Execução real de `netsh`, `nmcli`, `networksetup` e `security`**, quando você aprovar, para verificar o Wi-Fi fora dos comandos simulados.
 
 ## Créditos
 

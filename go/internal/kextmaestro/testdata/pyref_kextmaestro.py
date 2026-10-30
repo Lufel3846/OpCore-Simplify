@@ -20,6 +20,7 @@ Ops (each request has "op"):
   install {macos, dir, ock}   -> install_kexts_to_efi, then the tree of dir
   load {report, macos, dir}   -> load_kexts
   modify {path, report, macos}-> modify_kexts, then the sha256 of the file
+  modify_wifi {path, report, macos, profiles} -> modify_kexts with the Wi-Fi profiles fixed
   checked                     -> sorted names of checked kexts
 """
 
@@ -118,6 +119,14 @@ def _run(req):
         if op == "load":
             return {"ok": km.load_kexts(req["report"], req["macos"], req["dir"])}
         if op == "modify":
+            km.modify_kexts(req["path"], req["report"], req["macos"])
+            with open(req["path"], "rb") as f:
+                return {"ok": hashlib.sha256(f.read()).hexdigest()}
+        if op == "modify_wifi":
+            from Scripts import wifi_profile_extractor
+
+            profiles = [tuple(p) for p in req["profiles"]]
+            wifi_profile_extractor.WifiProfileExtractor.get_profiles = lambda self: profiles
             km.modify_kexts(req["path"], req["report"], req["macos"])
             with open(req["path"], "rb") as f:
                 return {"ok": hashlib.sha256(f.read()).hexdigest()}
