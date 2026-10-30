@@ -18,7 +18,12 @@ Licença: BSD 3-Clause, Copyright (c) 2024, lzhoang2601. Veja [`LICENSE`](LICENS
 | `Scripts/kext_maestro.py`, `datasets/kext_data.py` | — | Pendente |
 | `Scripts/smbios.py` (geração de serial/MLB/UUID) | — | Pendente |
 | `utils.py` (leitura/escrita de plist via `plistlib`, XML) | `internal/plist` | Implementado e testado contra o `plistlib` (binário pendente) |
-| Geração de EFI (`config_prodigy.py`, `gathering_files.py`, `build_opencore_efi`) | — | Pendente (ver "Pesquisa sobre a EFI automatizada") |
+| `utils.py` (JSON via `json`, busca de caminhos, zip, leitura/escrita de arquivos) | `internal/pyjson`, `internal/fsutil` | Implementado e testado contra o Python |
+| `integrity_checker.py` | `internal/integrity` | Implementado e testado contra o Python |
+| `resource_fetcher.py` (requisições, gzip/deflate, download com SHA-256) | `internal/fetch` | Implementado e testado contra o Python, com servidor local |
+| `github.py` (parsers das páginas de release) | `internal/github` | Parsers implementados e testados contra o Python (`get_commits` não portado) |
+| `gathering_files.py` | `internal/gathering` | Implementado e testado contra o Python em 8 cenários de fluxo completo. `process_kext` pendente (ver abaixo) |
+| `config_prodigy.py`, `build_opencore_efi` | — | Pendente |
 | GUI (Wails) | — | Não iniciado |
 
 Não há pacotes vazios nem placeholders: um pacote só entra no repositório quando tem implementação e testes.
@@ -122,11 +127,36 @@ Porta o uso de `plistlib` do projeto (`utils.read_file` / `utils.write_file` par
 - **Downloads funcionam neste ambiente.** O índice de builds da Dortania (`raw.githubusercontent.com/dortania/build-repo/builds/latest.json`) responde 200, e o artefato do OpenCorePkg em `github.com/dortania/build-repo/releases/download/...` baixou 10,4 MB (200). A API do GitHub (`api.github.com`) e a página `releases/latest` retornam 403, então a resolução de versões precisa usar o índice da Dortania, como o próprio projeto faz.
 - **Escopo do pipeline original** (`OpCore-Simplify.py:build_opencore_efi` e módulos chamados): `acpi_guru.py` (~3.300 linhas), `config_prodigy.py` (~750), `kext_maestro.py` (~810), `gathering_files.py` (~370), `smbios.py` (geração de serial via `macserial`), além dos datasets. A EFI completa depende de todos eles.
 
+## Módulos de download e cache (`gathering_files.py`)
+
+Pacotes: `internal/pyjson`, `internal/fsutil`, `internal/integrity`, `internal/fetch`, `internal/github` e `internal/gathering`. Cada um espelha o módulo Python de mesmo nome e tem um teste de paridade que roda o original.
+
+### Como a equivalência é verificada
+
+- **JSON** (`pyjson`): `Load` e `Dump` (indent=4, escape ASCII) comparados com `json.dumps(json.loads(...), indent=4)` em 24 documentos, incluindo erros de sintaxe.
+- **Arquivos** (`fsutil`): `FindMatchingPaths` comparado com `find_matching_paths`, e os bytes de `WriteFile` comparados com `write_file` para `.json` e `.plist`.
+- **Integridade** (`integrity`): manifests gerados e verificações após modificar, remover e incluir arquivos, mais os casos de pasta ausente e manifest inválido, comparados com `integrity_checker.py` sobre a mesma árvore.
+- **Requisições** (`fetch`): 12 buscas e 7 downloads contra um servidor HTTP local, comparados com `resource_fetcher.py`. Cobrem gzip com e sem cabeçalho, deflate, JSON e plist inválidos, 404, 500, 204, SHA-256 correto, em maiúsculas, errado e ausente, arquivo vazio e uma falha que exige nova tentativa.
+- **GitHub** (`github`): os parsers de payload, tag, corpo, assets e nome de asset comparados com `github.py` em 31 entradas. As entradas são HTML sintético com a estrutura que o parser lê. As URLs de `github.com` são fixas no original, então `get_latest_release` não é testado contra a página real.
+- **Fluxo completo** (`gathering`): `gather_bootloader_kexts` executado pelo `gatheringFiles` original, com o índice da Dortania, o OpenCorePkg e o OcBinaryData servidos localmente. A comparação cobre resultado, árvore de arquivos com SHA-256, `history.json` byte a byte e o `manifest.json` como dicionário. Os 8 cenários: instalação nova, já atual, versão nova, SHA errado com cache válido, índice sem OpenCorePkg, URL ausente, 404 sem cache e SHA errado sem cache. Cada cenário cai no ramo pretendido, e o teste foi corrigido para isso.
+
+### Diferenças conhecidas
+
+1. **`process_kext` não portado.** É o `kext_maestro`, ainda não portado. Um kext baixado que contenha `.kext` que não seja `research`/`debug`/`Contents` falha com `ErrProcessKextNotPorted`, em vez de seguir sem processar. O ramo do OpenCorePkg não depende dele, e é o que está coberto.
+2. **Instalação do macserial não coberta por teste.** O código existe e segue o original, mas o zip de teste não contém macserial, porque o Python grava em `Scripts/` fixo e não há como redirecioná-lo sem alterar o original.
+3. **Ordem do manifest.** O Python grava o manifest na ordem do `os.walk`, que depende do sistema de arquivos. O Go grava em ordem alfabética. O conjunto de entradas é o mesmo, e a verificação usa o conjunto.
+4. **Saída de terminal.** `head()` do original limpa o terminal e desenha uma caixa. A porta imprime as mensagens sem limpar a tela. A barra de progresso segue a mesma fórmula, mas não é comparada, porque depende do tempo.
+5. **`chmod +x`.** O Go adiciona os bits de execução sem aplicar o `umask`, enquanto `chmod +x` respeita o `umask`.
+6. **`splitlines`.** `splitLines` trata `\r\n`, `\r` e `\n`. O Python também trata separadores Unicode raros (como `\v` e `\x1c`), que não aparecem em HTML do GitHub.
+7. **Windows do Hardware Sniffer.** `GatherHardwareSniffer` está implementado, mas o ramo Windows não roda aqui. Fora do Windows ele retorna sem fazer nada, como no original, e isso é testado.
+8. **`GetKernelPatches`.** Quando `Kernel/Patch` existe mas não é uma lista, o Go trata como falha, e o Python devolveria o valor. Não acontece no arquivo de patches atual.
+9. **Timeouts.** O Python usa `timeout=10` por operação de socket. O Go usa 10 s para conectar e para receber o cabeçalho, sem limite para o corpo.
+
 ## Próxima etapa sugerida
 
-1. `gathering_files`: download do índice da Dortania, verificação SHA-256 e extração do OpenCorePkg, com o mesmo comportamento do original.
+1. `kext_maestro`: `process_kext` e a lista de kexts (`KextInfo`) que `gathering` já consome. Com isso, o gancho `ProcessKext` deixa de ser necessário.
 2. Datasets restantes (`kext_data`, `cpu_data`, `chipset_data`, `pci_data`, `codec_layouts`), gerados a partir do Python como foi feito com `mac_model_data`.
-3. `kext_maestro` e `config_prodigy.genarate` sobre o `internal/plist`, com paridade contra o original.
+3. `config_prodigy.genarate` sobre `internal/plist`, com paridade contra o original.
 4. Montagem da pasta EFI e limpeza de drivers e ferramentas não usados, como em `build_opencore_efi`.
 5. `acpi_guru` por último, porque é o maior módulo.
 
