@@ -17,7 +17,8 @@ Licença: BSD 3-Clause, Copyright (c) 2024, lzhoang2601. Veja [`LICENSE`](LICENS
 | `Scripts/acpi_guru.py`, `dsdt.py`, `datasets/acpi_patch_data.py` | — | Pendente |
 | `Scripts/kext_maestro.py`, `datasets/kext_data.py` | — | Pendente |
 | `Scripts/smbios.py` (geração de serial/MLB/UUID) | — | Pendente |
-| Gerenciamento de plist / geração de EFI (`config_prodigy.py`, `gathering_files.py`) | — | Pendente |
+| `utils.py` (leitura/escrita de plist via `plistlib`, XML) | `internal/plist` | Implementado e testado contra o `plistlib` (binário pendente) |
+| Geração de EFI (`config_prodigy.py`, `gathering_files.py`, `build_opencore_efi`) | — | Pendente (ver "Pesquisa sobre a EFI automatizada") |
 | GUI (Wails) | — | Não iniciado |
 
 Não há pacotes vazios nem placeholders: um pacote só entra no repositório quando tem implementação e testes.
@@ -97,9 +98,39 @@ Verificação de sensibilidade: alterando de propósito o `Macmini7,1` do ramo H
 3. A seleção cobre só o modelo padrão. `customize_smbios_model`, `smbios_specific_options` (que decide NoTouchID e RestrictEvents) e a interface interativa não estão portados.
 4. Geração de serial, MLB, ROM e UUID (`generate_smbios`) não foi portada. Depende do `macserial` e de download.
 
+## Módulo implementado: `internal/plist` (leitura e escrita de plist)
+
+Porta o uso de `plistlib` do projeto (`utils.read_file` / `utils.write_file` para `.plist`, edição de `Info.plist` dos kexts e `config.plist`).
+
+- `Marshal` escreve XML igual ao `plistlib.dumps(v, fmt=FMT_XML)`, byte a byte: cabeçalho, indentação com tabs, chaves ordenadas, `<real>` com o `repr` do Python, `<data>` quebrado em linhas de até 76 colunas, e `<dict/>`/`<array/>` vazios.
+- `Unmarshal` lê XML com a mesma lógica do `_PlistParser`: `<key>` vazia tratada como falsa, `<integer>` com hexadecimal e underscores, elementos desconhecidos ignorados com seus filhos processados, e entidades `ENTITY` rejeitadas.
+- `Dict` é um dicionário com ordem de inserção. O original depende da ordem (por exemplo, a última GPU de um relatório), então um `map` do Go não serviria.
+- Inteiros fora de 64 bits viram `*big.Int`, como o `int` do Python. Não há overflow silencioso.
+
+### Como a equivalência é verificada
+
+`internal/plist/parity_test.go` roda `testdata/pyref_plist.py` com o `plistlib` original, sem modificações. Compara 38 casos de escrita (byte a byte) e 46 de leitura (valor a valor), incluindo os casos em que o Python lança erro. Os casos cobrem floats com fronteiras de `repr` (`1e15`, `1e16`, `1e-4`, `1e-5`, `inf`, `nan`), inteiros nas fronteiras de 64 bits, dados de 1, 57, 58 e 300 bytes, datas válidas e inválidas, e caracteres de escape.
+
+### Diferenças conhecidas do `internal/plist`
+
+1. **Padding Base64 no meio do dado**: o `binascii` do CPython continua decodificando depois de um `=` que aparece antes do fim (`QUJDRA==QQ==` gera `ABCD\x04\x10`). A regra exata não foi reproduzida. O `plistlib` nunca escreve esse formato, então só aparece em XML malformado. O caso fica fora da paridade.
+2. **Plist binário (`bplist00`)**: não suportado ainda. A leitura retorna erro explícito, não uma interpretação errada.
+3. **Parsing de inteiro duplicado**: `pyInt` em `internal/plist/pyfmt.go` repete a lógica de `parsePyInt` em `internal/macos`. Unificar em um pacote compartilhado é uma refatoração pendente, que não foi feita aqui.
+
+## Pesquisa sobre a EFI automatizada: o que já foi confirmado
+
+- **Downloads funcionam neste ambiente.** O índice de builds da Dortania (`raw.githubusercontent.com/dortania/build-repo/builds/latest.json`) responde 200, e o artefato do OpenCorePkg em `github.com/dortania/build-repo/releases/download/...` baixou 10,4 MB (200). A API do GitHub (`api.github.com`) e a página `releases/latest` retornam 403, então a resolução de versões precisa usar o índice da Dortania, como o próprio projeto faz.
+- **Escopo do pipeline original** (`OpCore-Simplify.py:build_opencore_efi` e módulos chamados): `acpi_guru.py` (~3.300 linhas), `config_prodigy.py` (~750), `kext_maestro.py` (~810), `gathering_files.py` (~370), `smbios.py` (geração de serial via `macserial`), além dos datasets. A EFI completa depende de todos eles.
+
 ## Próxima etapa sugerida
 
-Portar a geração de SMBIOS (`generate_smbios`): `generate_random_mac` e o formato `MLB`/`SystemSerialNumber` com os valores de fallback. O `macserial` é um binário externo. Antes de implementar, é preciso decidir como ele será invocado em cada plataforma e como o fallback será testado sem executá-lo. Depois, as regras de compatibilidade (`compatibility_checker.py`).
+1. `gathering_files`: download do índice da Dortania, verificação SHA-256 e extração do OpenCorePkg, com o mesmo comportamento do original.
+2. Datasets restantes (`kext_data`, `cpu_data`, `chipset_data`, `pci_data`, `codec_layouts`), gerados a partir do Python como foi feito com `mac_model_data`.
+3. `kext_maestro` e `config_prodigy.genarate` sobre o `internal/plist`, com paridade contra o original.
+4. Montagem da pasta EFI e limpeza de drivers e ferramentas não usados, como em `build_opencore_efi`.
+5. `acpi_guru` por último, porque é o maior módulo.
+
+Os passos 1 a 4 produzem uma EFI completa sem ACPI personalizado. O passo 5 é o que falta para ter a paridade total.
 
 ## Créditos
 
