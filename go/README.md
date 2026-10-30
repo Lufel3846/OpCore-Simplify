@@ -220,6 +220,23 @@ Porta o `wifi_profile_extractor`: classifica o tipo de autenticação (open, wep
 
 **Limitação:** `netsh`, `nmcli`, `networksetup` e `security` **não foram executados** de verdade nesta sessão; os comandos são simulados nos dois lados. Os prompts e a saída de terminal não são reproduzidos byte a byte; `Run` e `Input` são injetados.
 
+## Módulo implementado: `internal/dsdt` (`dsdt.py`)
+
+Primeira etapa do `acpi_guru.py`: porta o `dsdt.py`, a camada em que o `ACPIGuru` se apoia. Carrega tabelas `.aml`/`.dat` (a pasta inteira ou um arquivo), chama o `iasl` para desassemblar, monta o dicionário de cada tabela (linhas, escopos, caminhos, assinatura, OEM, ID, revisão, bytes brutos) e reconstrói a última linha de hex que o desassemblador omite. Também porta as buscas: `get_devices`, `get_scope`, `get_scopes`, `get_paths`, `get_path_of_type` e derivadas, `get_device_paths_with_hid`, `find_previous_hex`/`find_next_hex`, `get_hex_starting_at`/`get_hex_ending_at`, `get_unique_pad` e `get_shortest_unique_pad`, `get_hex_from_int` e as buscas de tabela por ID/assinatura.
+
+### Como a equivalência é verificada
+
+`parity_test.go` roda o `Scripts/dsdt.py` **original** (`testdata/pyref_dsdt.py`, sem modificá-lo) e o Go sobre as mesmas tabelas geradas no teste: DSDT, SSDT (com CRLF) e APIC, com listagem mista (texto e hex intercalados, linha final omitida, sequências repetidas para forçar o pad). Cerca de 600 passos comparados: carga de pasta e de arquivo, buscas de hex com índices dentro e fora do intervalo (inclusive negativos), os três sentidos do pad, buscas de caminho com todas as combinações de tipo e nome, funções auxiliares (`is_hex`, `get_hex`, `get_line`, `get_ascii_print`, `get_hex_from_int` com valores negativos) e 14 cenários de falha: nova tentativa sem `-da`, nova tentativa tabela a tabela, `.dsl` ausente, nenhuma tabela, cabeçalho curto, bytes não imprimíveis, UTF-8 inválido, `\r` isolado e rodapés `Table Header:`/`Raw Table Data`. A mutação de três comportamentos (desempate do pad, notação `^`, tradução de `\r`/`\r\n`) faz os testes falharem.
+
+### Diferenças e limitações
+
+1. **O `iasl` real não foi executado.** Nos testes, os dois lados chamam o mesmo `iasl` falso (um script `sh` do teste que copia um `.dsl` pronto). A decisão de chamadas, os argumentos e as repetições estão cobertos; a saída do desassemblador de verdade não foi verificada. Nenhum binário baixado foi executado.
+2. **Download do `iasl`:** `IaslFinder.Check` porta a procura (`iasl-dev`, `iasl-stable`, `iasl`, ou `.exe` no Windows); o download é o gancho `Download`. Sem ele, um `iasl` ausente continua ausente e `MissingIaslError` devolve o texto da exceção original.
+3. **`dump_tables` não foi portado:** nada no projeto o chama.
+4. A ordem de `os.listdir` é arbitrária no Python; o Go ordena os nomes. Só a ordem de inserção de `acpi_tables` pode mudar.
+5. `get_devices(search=None)` (que devolve lista vazia) não é representável: o Go exige uma string.
+6. Os textos impressos são enviados para `Log`; não são reproduzidos byte a byte.
+
 ## Módulos implementados: `internal/efi` e serial SMBIOS
 
 ### Serial SMBIOS (`internal/smbios/serial.go`)
@@ -246,7 +263,7 @@ Porta `build_opencore_efi`: cria a pasta de resultado, copia o OpenCorePkg, zera
 
 ## Próxima etapa sugerida
 
-1. **`acpi_guru.py`**, o maior módulo, para que a EFI de hardware com DSDT também possa ser montada. Sem ele, a montagem é completa apenas para sistemas que não precisam de patches ACPI.
+1. **`acpi_guru.py`**, o maior módulo (3355 linhas), em passos. Feito: `dsdt.py`, a base. Próximo: carga das tabelas e seleção (`read_acpi_tables`, `ensure_dsdt`, `select_acpi_patches`, `apply_acpi_patches`, `write_ssdt`), depois os patches, um a um. Sem o restante, a montagem é completa apenas para sistemas que não precisam de patches ACPI.
 2. **Comando `build` na CLI**, ligando o seletor de hardware (relatório JSON), a compatibilidade, o modelo SMBIOS e a montagem.
 3. **Verificação do `macserial` real**, quando você aprovar a execução do binário.
 4. **Execução real de `netsh`, `nmcli`, `networksetup` e `security`**, quando você aprovar, para verificar o Wi-Fi fora dos comandos simulados.
