@@ -18,6 +18,8 @@ import (
 
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/fetch"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/integrity"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/kextmaestro"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/plist"
 )
 
 // fixtureZip builds an OpenCorePkg-like archive: the bootloader in X64/EFI,
@@ -77,6 +79,23 @@ func TestParityWithPythonGatherBootloaderKexts(t *testing.T) {
 	})
 	ocSum := sha256.Sum256(ocZip)
 
+	luBundle := plist.NewDict()
+	luBundle.Set("CFBundleIdentifier", "as.vit9696.Lilu")
+	luBundle.Set("CFBundleExecutable", "Lilu")
+	luBundle.Set("CFBundleVersion", "1.6.0")
+	luBundle.Set("OSBundleLibraries", plist.NewDict())
+	luBundle.Set("IOKitPersonalities", plist.NewDict())
+	luPlist, err := plist.Marshal(luBundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	luZip := fixtureZip(t, map[string]string{
+		"Lilu.kext/Contents/Info.plist":                             string(luPlist),
+		"Lilu.kext/Contents/MacOS/Lilu":                             "lilu binary",
+		"Lilu.kext/Contents/PlugIns/Debug.kext/Contents/Info.plist": string(luPlist),
+	})
+	luSum := sha256.Sum256(luZip)
+
 	state := &serverState{id: 42, sha: hex.EncodeToString(ocSum[:])}
 	var srv *httptest.Server
 	mux := http.NewServeMux()
@@ -111,6 +130,7 @@ func TestParityWithPythonGatherBootloaderKexts(t *testing.T) {
 		w.Write(ocZip)
 	})
 	mux.HandleFunc("/OcBinaryData.zip", func(w http.ResponseWriter, r *http.Request) { w.Write(ocBinary) })
+	mux.HandleFunc("/Lilu.zip", func(w http.ResponseWriter, r *http.Request) { w.Write(luZip) })
 	srv = httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -128,16 +148,18 @@ func TestParityWithPythonGatherBootloaderKexts(t *testing.T) {
 	steps := []struct {
 		name   string
 		fresh  bool
+		kext   bool
 		mutate func()
 	}{
-		{"fresh install", true, func() {}},
-		{"already current", false, func() {}},
-		{"newer release", false, func() { state.id = 43 }},
-		{"checksum mismatch with valid cache", false, func() { state.id = 44; state.sha = "0000" }},
-		{"no OpenCorePkg in index", false, func() { state.omitOC = true }},
-		{"download URL missing", false, func() { state.omitOC = false; state.omitURL = true }},
-		{"download 404 on fresh cache", true, func() { state.omitURL = false; state.zipMissing = true }},
-		{"checksum mismatch on fresh cache", true, func() { state.zipMissing = false; state.sha = "0000" }},
+		{"fresh install", true, false, func() {}},
+		{"kext bundle from download", true, true, func() {}},
+		{"already current", false, false, func() {}},
+		{"newer release", false, false, func() { state.id = 43 }},
+		{"checksum mismatch with valid cache", false, false, func() { state.id = 44; state.sha = "0000" }},
+		{"no OpenCorePkg in index", false, false, func() { state.omitOC = true }},
+		{"download URL missing", false, false, func() { state.omitOC = false; state.omitURL = true }},
+		{"download 404 on fresh cache", true, false, func() { state.omitURL = false; state.zipMissing = true }},
+		{"checksum mismatch on fresh cache", true, false, func() { state.zipMissing = false; state.sha = "0000" }},
 	}
 
 	for _, step := range steps {
@@ -147,12 +169,23 @@ func TestParityWithPythonGatherBootloaderKexts(t *testing.T) {
 			ockGo = t.TempDir()
 		}
 		t.Run(step.name, func(t *testing.T) {
-			py := runGatherOracle(t, python, repo, map[string]any{
+			oracleReq := map[string]any{
 				"dortania_url": srv.URL + "/latest.json",
 				"ocbinary_url": srv.URL + "/OcBinaryData.zip",
 				"ock_dir":      ockPy,
 				"macos":        "25.0.0",
-			})
+			}
+			var kexts []*Kext
+			if step.kext {
+				sha := hex.EncodeToString(luSum[:])
+				oracleReq["kext"] = map[string]any{"id": 77, "url": srv.URL + "/Lilu.zip", "sha256": sha}
+				download := plist.NewDict()
+				download.Set("id", int64(77))
+				download.Set("url", srv.URL+"/Lilu.zip")
+				download.Set("sha256", sha)
+				kexts = []*Kext{{Name: "Lilu", Checked: true, DownloadInfo: download}}
+			}
+			py := runGatherOracle(t, python, repo, oracleReq)
 
 			g := &Gatherer{
 				Out:               io.Discard,
@@ -170,7 +203,9 @@ func TestParityWithPythonGatherBootloaderKexts(t *testing.T) {
 			defer os.RemoveAll(tmp)
 			g.TemporaryDir = tmp
 
-			ok, goErr := g.GatherBootloaderKexts(nil, nil, "25.0.0")
+			maestro := kextmaestro.New(ockGo)
+			g.ProcessKext = maestro.ProcessKextAccepted
+			ok, goErr := g.GatherBootloaderKexts(kexts, nil, "25.0.0")
 			if (goErr != nil) != (py.Error != nil) {
 				t.Fatalf("error mismatch: go %v; python %v", goErr, py.Error)
 			}

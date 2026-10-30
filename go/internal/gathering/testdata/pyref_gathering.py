@@ -18,7 +18,7 @@ import tempfile
 repo = sys.argv[1]
 sys.path.insert(0, repo)
 
-from Scripts import gathering_files, github, integrity_checker, resource_fetcher, utils  # noqa: E402
+from Scripts import gathering_files, github, integrity_checker, kext_maestro, resource_fetcher, utils  # noqa: E402
 
 real_stdout = sys.stdout
 sys.stdout = open(os.devnull, "w")
@@ -39,10 +39,25 @@ g.temporary_dir = tempfile.mkdtemp(prefix="ocs_py_")
 g.ock_files_dir = req["ock_dir"]
 g.download_history_file = os.path.join(req["ock_dir"], "history.json")
 
+kexts = []
+if req.get("kext"):
+    from Scripts.datasets import kext_data  # noqa: E402
+
+    spec = req["kext"]
+    kext = kext_data.KextInfo(
+        name="Lilu",
+        description="test",
+        category="test",
+        download_info={"id": spec["id"], "url": spec["url"], "sha256": spec["sha256"]},
+    )
+    kext.checked = True
+    kexts = [kext]
+    g.kext = kext_maestro.KextMaestro()
+
 error = None
 ok = None
 try:
-    ok = g.gather_bootloader_kexts([], req["macos"])
+    ok = g.gather_bootloader_kexts(kexts, req["macos"])
 except Exception as exc:
     error = type(exc).__name__
 

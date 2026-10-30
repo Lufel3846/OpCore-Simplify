@@ -23,6 +23,9 @@ Licença: BSD 3-Clause, Copyright (c) 2024, lzhoang2601. Veja [`LICENSE`](LICENS
 | `resource_fetcher.py` (requisições, gzip/deflate, download com SHA-256) | `internal/fetch` | Implementado e testado contra o Python, com servidor local |
 | `github.py` (parsers das páginas de release) | `internal/github` | Parsers implementados e testados contra o Python (`get_commits` não portado) |
 | `gathering_files.py` | `internal/gathering` | Implementado e testado contra o Python em 8 cenários de fluxo completo. `process_kext` pendente (ver abaixo) |
+| `kext_maestro.py` (seleção, verificação, instalação, `load_kexts`) | `internal/kextmaestro` | Implementado e testado contra o Python. Menu interativo e Wi-Fi via `wifi_profile_extractor` pendentes (ver abaixo) |
+| `kext_data.py`, `pci_data.py`, `cpu_data.py`, `codec_layouts.py` | `internal/datasets` | Gerados a partir do Python por `tools/gen_datasets.py` (dicionários do `pci_data` ainda não gerados) |
+| Semântica de Python usada pelos módulos (`dict.get`, `in`, `len`, `int()`, `==`, truthiness) | `internal/pyrt` | Testado contra o Python operador a operador |
 | `config_prodigy.py`, `build_opencore_efi` | — | Pendente |
 | GUI (Wails) | — | Não iniciado |
 
@@ -152,15 +155,38 @@ Pacotes: `internal/pyjson`, `internal/fsutil`, `internal/integrity`, `internal/f
 8. **`GetKernelPatches`.** Quando `Kernel/Patch` existe mas não é uma lista, o Go trata como falha, e o Python devolveria o valor. Não acontece no arquivo de patches atual.
 9. **Timeouts.** O Python usa `timeout=10` por operação de socket. O Go usa 10 s para conectar e para receber o cabeçalho, sem limite para o corpo.
 
+## Módulo implementado: `internal/kextmaestro` (`kext_maestro.py`)
+
+Pacotes: `internal/kextmaestro`, `internal/datasets` (gerado), `internal/pyrt`. O `pyrt` reproduz as operações do Python sobre o relatório de hardware: `dict.get`, `x in y` (que muda de significado conforme o tipo de `y`), `len`, `int()`, truthiness e `==`. Cada operação devolve erro onde o Python levantaria exceção, para que o port falhe nos mesmos casos.
+
+### Como a equivalência é verificada
+
+- **Seleção** (`SelectRequiredKexts`): 400 relatórios de hardware gerados com semente fixa, cobrindo ramos de Intel/AMD, laptop/desktop/NUC, GPUs Navi, Wi-Fi (Broadcom, Intel, Atheros, rtw88), Bluetooth, entradas de teclado/touchpad, SATA e USB com subsistemas, e versões do macOS de 16.7 a 25.0 mais uma inválida. Compara `needs_oclp` e o conjunto de kexts marcados. São 324 casos que completam e 76 que levantam erro nos dois lados.
+- **Check, uncheck, status e compatibilidade**: 60 sequências aleatórias de 8 operações cada, com dependências, conflitos e force load, comparadas passo a passo e no estado final.
+- **Verificação de força** (`VerifyKextCompatibility`): comparada com a resposta "yes" do prompt.
+- **Bundles em disco**: fixtures com `Lilu.kext`, `AppleALC.kext` (correspondências PCI, IO name, USB e HDA), `VoodooTSCSync.kext` (sem executável), `itlwm.kext` (`WiFiConfig` vazio), um pasta sem `Info.plist` e um plist inválido. Comparados: `extract_pci_id`, `process_kext`, `modify_kexts` (dois ramos de versão e o caso sem escrita), `install_kexts_to_efi` (árvore resultante) e `load_kexts` (lista de `Kernel > Add`).
+- **Fluxo completo com kext**: no teste de `gathering`, o Lilu é baixado como zip, passa por `process_kext` e vai para o cache, nos dois lados. Os arquivos e o histórico batem, incluindo o `Debug.kext` ignorado.
+- **Operadores do Python** (`pyrt`): 60 casos de `in`, `==`, truthiness, `len` e `int()`, avaliados pelo Python real.
+- **Sensibilidade**: trocando de propósito um `||` por `&&` na condição de Sandy/Ivy Bridge, a matriz de seleção falhou; restaurado, passa.
+
+### Diferenças conhecidas
+
+1. **Menu interativo** (`kext_configuration_menu`) não portado. É UI de terminal.
+2. **Wi-Fi do `modify_kexts`**: com `WiFiConfig` preenchido, a porta precisa de `wifi_profile_extractor`, que depende de `netsh`, `nmcli` ou `networksetup`. Sem o gancho `WifiProfiles`, o caminho retorna `ErrWifiProfilesNotPorted` em vez de fingir sucesso.
+3. **Saída de terminal e prompts de texto**: as mensagens `print` e a limpeza de tela não são reproduzidas. Os prompts (`request_input`) são, com a mesma sequência de respostas.
+4. **Catálogo compartilhado**: o Python compartilha a lista de kexts entre instâncias de um mesmo processo. A porta dá uma cópia para cada `Maestro`. Na CLI do original há uma única instância, então o comportamento observável é igual.
+5. **`int()` com dígitos não ASCII**: o Python aceita `٢٥`; o `pyrt` aceita só `0-9`. O caso fica fora da paridade.
+6. **Dicionários do `pci_data`** (`SpoofGPUIDs`, `ChromebookIDs`, `ThinkPadTWX30IDs`, `UnsupportedNVMeSSDIDs`) ainda não foram gerados. Não são usados pelo `kext_maestro`, mas serão necessários no `config_prodigy`.
+7. **Dois tipos de kext**: `gathering.Kext` e `datasets.KextInfo` representam o mesmo conceito, com campos sobrepostos. Unificar é uma refatoração pendente.
+
 ## Próxima etapa sugerida
 
-1. `kext_maestro`: `process_kext` e a lista de kexts (`KextInfo`) que `gathering` já consome. Com isso, o gancho `ProcessKext` deixa de ser necessário.
-2. Datasets restantes (`kext_data`, `cpu_data`, `chipset_data`, `pci_data`, `codec_layouts`), gerados a partir do Python como foi feito com `mac_model_data`.
-3. `config_prodigy.genarate` sobre `internal/plist`, com paridade contra o original.
-4. Montagem da pasta EFI e limpeza de drivers e ferramentas não usados, como em `build_opencore_efi`.
-5. `acpi_guru` por último, porque é o maior módulo.
+1. `config_prodigy.genarate` sobre `internal/plist` e os resultados de `kextmaestro`, com paridade contra o original. Ele também precisa dos dicionários do `pci_data` mencionados acima.
+2. Montagem da pasta EFI e limpeza de drivers e ferramentas não usados, como em `build_opencore_efi`.
+3. `wifi_profile_extractor`, para fechar o gancho `WifiProfiles`.
+4. `acpi_guru` por último, porque é o maior módulo.
 
-Os passos 1 a 4 produzem uma EFI completa sem ACPI personalizado. O passo 5 é o que falta para ter a paridade total.
+Os passos 1 e 2 produzem uma EFI completa sem ACPI personalizado. O passo 4 é o que falta para a paridade total.
 
 ## Créditos
 
