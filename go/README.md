@@ -27,7 +27,8 @@ Licença: BSD 3-Clause, Copyright (c) 2024, lzhoang2601. Veja [`LICENSE`](LICENS
 | `kext_data.py`, `pci_data.py`, `cpu_data.py`, `codec_layouts.py` | `internal/datasets` | Gerados a partir do Python por `tools/gen_datasets.py` (dicionários do `pci_data` ainda não gerados) |
 | Semântica de Python usada pelos módulos (`dict.get`, `in`, `len`, `int()`, `==`, truthiness) | `internal/pyrt` | Testado contra o Python operador a operador |
 | `config_prodigy.py` (`genarate` e blocos de DeviceProperties, Kernel, Booter, NVRAM, UEFI) | `internal/config` | Implementado e comparado byte a byte com o `plistlib` do original em 300 relatórios (250 completos, 50 que falham nos dois lados). Ganchos para layout de áudio, patches remotos e serial (ver abaixo) |
-| `build_opencore_efi` (montagem da pasta EFI e limpeza) | — | Pendente |
+| `build_opencore_efi` (montagem da pasta EFI e limpeza) | `internal/efi` | Implementado e comparado com o `OCPE.build_opencore_efi` original (árvore final inteira, por SHA-256). ACPI exige declaração (ver abaixo) |
+| `smbios.generate_smbios` (serial, MLB, ROM, UUID via `macserial`) | `internal/smbios` (`serial.go`) | Implementado e comparado com o original em 12 cenários. O executável real não foi executado nesta sessão (ver abaixo) |
 | GUI (Wails) | — | Não iniciado |
 
 Não há pacotes vazios nem placeholders: um pacote só entra no repositório quando tem implementação e testes.
@@ -208,6 +209,41 @@ Os helpers de hex (`hex_to_bytes` devolve bytes ou a própria string), `to_littl
 3. `build_opencore_efi` (montagem da pasta EFI) ainda não existe. Por isso o config é gerado, mas a EFI não é montada.
 
 ### Créditos
+
+O `testdata/Sample.plist` é o `Docs/Sample.plist` do OpenCorePkg 1.0.9 (Acidanthera, BSD 3-Clause). O `patches.plist` é um fixture sintético de teste, não um patch real.
+
+## Módulos implementados: `internal/efi` e serial SMBIOS
+
+### Serial SMBIOS (`internal/smbios/serial.go`)
+
+Porta `check_macserial` e `generate_smbios`: procura o `macserial` na pasta de scripts (com os nomes certos por sistema), repete o passo de download quando falta (remove o OpenCorePkg do histórico e chama o gather de novo), executa `-g --model <modelo>`, lê o serial e o MLB da primeira linha (`serial | ... | mlb`) e usa os valores de fallback quando a saída não serve.
+
+`parity_test.go` roda 12 cenários contra o `generate_smbios` original: binário em cada sistema, código de retorno diferente de zero, saída sem separador, saída vazia, primeira linha em branco, binário ausente que aparece depois do gather, binário que nunca aparece (erro), limpeza do histórico, item de histórico que não é dicionário e sistema desconhecido. Os valores e o histórico final são comparados.
+
+**Limitação importante:** o executável real do `macserial` **não foi executado** nesta sessão, porque a execução de um binário baixado foi negada pelo classificador de permissões. Por isso, o teste substitui a execução por uma saída fixa nos dois lados. A lógica de decisão está coberta; a saída do binário real ainda não foi verificada. Para verificar com o binário real, é preciso aprovar a execução de `Utilities/macserial/macserial.linux` (ou o equivalente da sua plataforma) extraído do OpenCorePkg.
+
+### Montagem da EFI (`internal/efi/build.go`)
+
+Porta `build_opencore_efi`: cria a pasta de resultado, copia o OpenCorePkg, zera as listas de ACPI, instala os kexts marcados, gera o `Kernel > Add` e o config (com `internal/config`), grava o `config.plist` e remove drivers, ferramentas, recursos de áudio, variantes de ícone sem uso e o `manifest.json`.
+
+`parity_test.go` roda o `OCPE.build_opencore_efi` **do script original** (carregado com `importlib`) e o Go sobre o mesmo cache sintético: um OpenCorePkg com drivers e ferramentas usados e não usados, um diretório com nome `.efi`, áudio, duas variantes de ícone, e cinco bundles de kext. A árvore final (19 arquivos) é comparada por SHA-256. Um segundo cenário (OpenCorePkg ausente) precisa falhar nos dois lados.
+
+### Diferenças e limitações
+
+1. **ACPI não portado.** No original, `ensure_dsdt()` pode abrir um prompt para escolher tabelas ACPI, e os patches ACPI dependem do `acpi_guru.py`, que não está portado. O Go exige que o chamador declare `ACPIUnavailable`, que equivale ao `ensure_dsdt()` retornar `False`. Sem essa declaração, o build retorna `ErrACPINotPorted`. Hardware que precisa de patches de DSDT **não pode ser montado** ainda.
+2. **Serial real não verificado** (ver acima).
+3. **Sem comando de build na CLI.** A CLI expõe só os comandos `macos`. Hoje o build é uma API Go, testada, mas ainda não exposta ao usuário.
+4. **Wi-Fi do `kextmaestro`**: quando um `WiFiConfig` está preenchido, o build falha com `ErrWifiProfilesNotPorted` (`wifi_profile_extractor` não portado).
+5. Os prompts e a saída de terminal não são reproduzidos; a sequência de respostas é a mesma.
+
+## Próxima etapa sugerida
+
+1. **`acpi_guru.py`**, o maior módulo, para que a EFI de hardware com DSDT também possa ser montada. Sem ele, a montagem é completa apenas para sistemas que não precisam de patches ACPI.
+2. **Comando `build` na CLI**, ligando o seletor de hardware (relatório JSON), a compatibilidade, o modelo SMBIOS e a montagem.
+3. **Verificação do `macserial` real**, quando você aprovar a execução do binário.
+4. **`wifi_profile_extractor`**, para fechar o gancho do Wi-Fi.
+
+## Créditos
 
 O `testdata/Sample.plist` é o `Docs/Sample.plist` do OpenCorePkg 1.0.9 (Acidanthera, BSD 3-Clause). O `patches.plist` é um fixture sintético de teste, não um patch real.
 
