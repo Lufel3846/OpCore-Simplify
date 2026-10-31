@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/dsdt"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/plist"
@@ -21,8 +22,21 @@ func dAddEntry(name string, enabled bool) *plist.Dict {
 	return e
 }
 
-// dTail is s[i:] with Python's slice clamping (i >= 0).
+// dStart normalizes a Python start argument (str.index, s[i:]): negative values
+// count from the end and clamp to 0; the result may exceed len(s).
+func dStart(s string, i int) int {
+	if i < 0 {
+		i += len(s)
+		if i < 0 {
+			i = 0
+		}
+	}
+	return i
+}
+
+// dTail is s[i:] with Python's slice semantics.
 func dTail(s string, i int) string {
+	i = dStart(s, i)
 	if i >= len(s) {
 		return ""
 	}
@@ -76,12 +90,24 @@ func dPyInt10(s string) (int64, bool) {
 	if s == "" || strings.HasPrefix(s, "_") || strings.HasSuffix(s, "_") || strings.Contains(s, "__") {
 		return 0, false
 	}
+	var digits strings.Builder
 	for _, r := range s {
-		if (r < '0' || r > '9') && r != '_' {
+		switch {
+		case r == '_':
+		case r >= '0' && r <= '9':
+			digits.WriteRune(r)
+		case unicode.Is(unicode.Nd, r):
+			// Python int() accepts every decimal digit; their runs start at a zero.
+			z := r
+			for unicode.Is(unicode.Nd, z-1) {
+				z--
+			}
+			digits.WriteByte(byte('0' + (r-z)%10))
+		default:
 			return 0, false
 		}
 	}
-	n, err := strconv.ParseInt(strings.ReplaceAll(s, "_", ""), 10, 64)
+	n, err := strconv.ParseInt(digits.String(), 10, 64)
 	if err != nil {
 		n = math.MaxInt64
 	}
@@ -248,7 +274,7 @@ func (g *Guru) ExtractBlockContent(text string, startIdx int) string {
 	if i < 0 {
 		return ""
 	}
-	blockStart := dMax0(startIdx) + i
+	blockStart := dStart(text, startIdx) + i
 	count := 1
 	pos := blockStart + 1
 	for count > 0 && pos < len(text) {
@@ -263,13 +289,6 @@ func (g *Guru) ExtractBlockContent(text string, startIdx int) string {
 		return text[blockStart:pos]
 	}
 	return ""
-}
-
-func dMax0(i int) int {
-	if i < 0 {
-		return 0
-	}
-	return i
 }
 
 // ParseFieldLine mirrors parse_field_line; ok is false where it returns (None, None).
@@ -289,19 +308,19 @@ func (g *Guru) ParseFieldLine(line string) (string, int64, bool) {
 	return "", 0, false
 }
 
-// ProcessEmbeddedControlRegion mirrors process_embedded_control_region; an empty
-// name is Python's None.
-func (g *Guru) ProcessEmbeddedControlRegion(table string, startIdx int) (string, int) {
+// ProcessEmbeddedControlRegion mirrors process_embedded_control_region; ok is
+// false where it returns None for the name (the name can also be empty).
+func (g *Guru) ProcessEmbeddedControlRegion(table string, startIdx int) (name string, end int, ok bool) {
 	i := strings.Index(dTail(table, startIdx), "EmbeddedControl")
 	if i < 0 {
-		return "", startIdx + 1
+		return "", startIdx + 1, false
 	}
-	line, _, endLine := g.ExtractLine(table, dMax0(startIdx)+i)
+	line, _, endLine := g.ExtractLine(table, dStart(table, startIdx)+i)
 	p := strings.Split(line, "(")
 	if len(p) < 2 {
-		return "", startIdx + 1
+		return "", startIdx + 1, false
 	}
-	return pyStrip(strings.Split(p[1], ",")[0]), endLine
+	return pyStrip(strings.Split(p[1], ",")[0]), endLine, true
 }
 
 // DField is one {"name", "size"} entry of process_field_definition.
@@ -317,7 +336,7 @@ func (g *Guru) ProcessFieldDefinition(table, regionName string, startIdx int) ([
 	if !strings.Contains(dTail(table, startIdx), pattern) {
 		return fields, len(table)
 	}
-	fieldStart := dMax0(startIdx) + strings.Index(dTail(table, startIdx), pattern)
+	fieldStart := dStart(table, startIdx) + strings.Index(dTail(table, startIdx), pattern)
 	_, _, fieldEnd := g.ExtractLine(table, fieldStart)
 	block := g.ExtractBlockContent(table, fieldEnd)
 	for _, line := range dSplitLines(block) {
@@ -343,7 +362,7 @@ func (g *Guru) BatteryStatusPatch() (bool, error) {
 	var all []DField
 	for strings.Contains(dTail(table, searchStart), "EmbeddedControl") {
 		var region string
-		region, searchStart = g.ProcessEmbeddedControlRegion(table, searchStart)
+		region, searchStart, _ = g.ProcessEmbeddedControlRegion(table, searchStart)
 		if region == "" {
 			continue
 		}
