@@ -18,6 +18,7 @@ import (
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/datasets"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/dsdt"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/efi"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/fetch"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/fsutil"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/gathering"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/github"
@@ -84,7 +85,12 @@ func New() (*App, error) {
 	out := a.U.Out
 	in := a.U.RequestInput
 
-	iasl := dsdt.IaslFinder{ScriptDir: scripts, Platform: pyPlatform(), Log: out}.Check(false)
+	iasl := dsdt.IaslFinder{
+		ScriptDir: scripts,
+		Platform:  pyPlatform(),
+		Download:  dsdt.NewIaslDownload(scripts, pyPlatform(), fetch.New(out), out),
+		Log:       out,
+	}.Check(false)
 	if iasl == "" {
 		return nil, dsdt.MissingIaslError(scripts, pyPlatform())
 	}

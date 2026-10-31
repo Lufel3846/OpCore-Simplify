@@ -234,7 +234,7 @@ Primeira etapa do `acpi_guru.py`: porta o `dsdt.py`, a camada em que o `ACPIGuru
 ### Diferenças e limitações
 
 1. **O `iasl` real não foi executado.** Nos testes, os dois lados chamam o mesmo `iasl` falso (um script `sh` do teste que copia um `.dsl` pronto). A decisão de chamadas, os argumentos e as repetições estão cobertos; a saída do desassemblador de verdade não foi verificada. Nenhum binário baixado foi executado.
-2. **Download do `iasl`:** `IaslFinder.Check` porta a procura (`iasl-dev`, `iasl-stable`, `iasl`, ou `.exe` no Windows); o download é o gancho `Download`. Sem ele, um `iasl` ausente continua ausente e `MissingIaslError` devolve o texto da exceção original.
+2. **Download do `iasl`:** `IaslFinder.Check` porta a procura (`iasl-dev`, `iasl-stable`, `iasl`, ou `.exe` no Windows) e `NewIaslDownload` porta o download de `check_iasl`/`_download_and_extract`, com as mesmas URLs do original. A CLI liga esse gancho, então um `iasl` ausente é baixado sozinho. Diferença: o Go cria a pasta `Scripts/` ao lado do executável se ela não existir (o original sempre a tem).
 3. **`dump_tables` não foi portado:** nada no projeto o chama.
 4. A ordem de `os.listdir` é arbitrária no Python; o Go ordena os nomes. Só a ordem de inserção de `acpi_tables` pode mudar.
 5. `get_devices(search=None)` (que devolve lista vazia) não é representável: o Go exige uma string.
