@@ -20,7 +20,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/acpiguru"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/config"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/datasets"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/fsutil"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/kextmaestro"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/plist"
@@ -44,6 +46,9 @@ type Builder struct {
 	Kexts *kextmaestro.Maestro
 	// Config generates the config.plist.
 	Config *config.Prodigy
+	// ACPI runs the ACPI stage (ensure_dsdt and the checked patches). Nil falls
+	// back to ACPIUnavailable.
+	ACPI *acpiguru.Guru
 	// ACPIUnavailable declares that ensure_dsdt() would return False, so the ACPI
 	// patch lists stay empty.
 	ACPIUnavailable bool
@@ -78,7 +83,11 @@ func (b *Builder) Build(report any, disabled any, macosVersion string, needsOCLP
 			return err
 		}
 	}
-	if !b.ACPIUnavailable {
+	if b.ACPI != nil {
+		if err := b.runACPI(cfg, report, disabled, smbiosModel); err != nil {
+			return err
+		}
+	} else if !b.ACPIUnavailable {
 		return ErrACPINotPorted
 	}
 
@@ -120,6 +129,43 @@ func (b *Builder) Build(report any, disabled any, macosVersion string, needsOCLP
 			_ = os.RemoveAll(path)
 		} else {
 			_ = os.Remove(path)
+		}
+	}
+	return nil
+}
+
+// runACPI mirrors the ACPI block of build_opencore_efi.
+func (b *Builder) runACPI(cfg *plist.Dict, report, disabled any, smbiosModel string) error {
+	g := b.ACPI
+	lists := map[string][]any{"Add": {}, "Delete": {}, "Patch": {}}
+	ok, err := g.EnsureDSDT(false)
+	if err != nil {
+		return err
+	}
+	if ok {
+		g.HardwareReport = report
+		g.DisabledDevices = disabled
+		g.ACPIDirectory = filepath.Join(b.ResultDir, "EFI", "OC", "ACPI")
+		g.SMBIOSModel = smbiosModel
+		g.LPCBusDevice, _ = g.GetLPCName(false, false, false)
+		load, err := g.RunPatches(func(checked bool) {
+			if i, found := datasets.KextIndexByName["ECEnabler"]; found && i < len(b.Kexts.Kexts) {
+				b.Kexts.Kexts[i].Checked = checked
+			}
+		})
+		if err != nil {
+			return err
+		}
+		lists["Add"], lists["Delete"], lists["Patch"] = load.Add, load.Delete, load.Patch
+	}
+	patches, err := g.ApplyACPIPatches(lists["Patch"])
+	if err != nil {
+		return err
+	}
+	lists["Patch"] = patches
+	for _, key := range []string{"Add", "Delete", "Patch"} {
+		if err := setKey(cfg, lists[key], "ACPI", key); err != nil {
+			return err
 		}
 	}
 	return nil

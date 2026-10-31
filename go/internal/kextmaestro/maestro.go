@@ -13,6 +13,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -47,6 +48,8 @@ type Maestro struct {
 	// WifiProfiles returns the stored Wi-Fi profiles as (ssid, password) pairs.
 	// Nil makes WiFiConfig handling fail with ErrWifiProfilesNotPorted.
 	WifiProfiles func() ([][2]string, error)
+	// Log receives the terminal output of the interactive menu. Nil discards it.
+	Log io.Writer
 
 	matchingKeys []string
 }
