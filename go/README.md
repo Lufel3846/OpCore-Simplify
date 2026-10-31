@@ -13,10 +13,13 @@ Licença: BSD 3-Clause, Copyright (c) 2024, lzhoang2601. Veja [`LICENSE`](LICENS
 | `Scripts/datasets/mac_model_data.py` (tabela `mac_devices`) | `internal/smbios` | Implementado e testado contra o Python (gerado a partir do original) |
 | `smbios.SMBIOS.select_smbios_model` | `internal/smbios` | Implementado e testado contra o Python (38.880 casos) |
 | `Scripts/report_validator.py` | `internal/validator` | Implementado e comparado com o original em quase 3.000 relatórios (mutações de cada campo e de arquivo) |
-| `Scripts/compatibility_checker.py` + datasets de CPU/GPU/chipset/PCI | — | Pendente |
+| `Scripts/compatibility_checker.py` | `internal/compat` | Portado (fase Alpha, sem testes de paridade) |
+| `Scripts/hardware_customizer.py` | `internal/customizer` | Portado (fase Alpha, sem testes de paridade) |
+| `OpCore-Simplify.py` (fluxo principal), `utils.py` (terminal) | `internal/app`, `cmd/opcore-simplify` | Portado (fase Alpha): executar sem argumentos inicia o menu interativo |
+| `smbios.smbios_specific_options`, `customize_smbios_model`; `kext_maestro.kext_configuration_menu` | `internal/smbios` (`menu.go`), `internal/kextmaestro` (`menu.go`) | Portados (fase Alpha) |
 | `wifi_profile_extractor.py` | `internal/wifi` | Implementado e testado contra o Python com comandos simulados |
 | Detecção de hardware (`Report.json` / Hardware Sniffer) | — | Pendente |
-| `Scripts/dsdt.py`, `acpi_guru.py` (carga, seleção, auxiliares), `datasets/acpi_patch_data.py` | `internal/dsdt`, `internal/acpiguru` | Implementados e testados contra o Python. Os 24 patches que geram SSDTs ainda estão pendentes |
+| `Scripts/dsdt.py`, `acpi_guru.py` (carga, seleção, auxiliares), `datasets/acpi_patch_data.py` | `internal/dsdt`, `internal/acpiguru` | Implementados e testados contra o Python. Os 24 patches foram portados na fase Alpha (`patches_a..d.go`, despachante em `dispatch.go`), sem testes de paridade |
 | `utils.py` (leitura/escrita de plist via `plistlib`, XML) | `internal/plist` | Implementado e testado contra o `plistlib` (binário pendente) |
 | `utils.py` (JSON via `json`, busca de caminhos, zip, leitura/escrita de arquivos) | `internal/pyjson`, `internal/fsutil` | Implementado e testado contra o Python |
 | `integrity_checker.py` | `internal/integrity` | Implementado e testado contra o Python |
@@ -273,6 +276,19 @@ Como o validador mostra o texto do `json.JSONDecodeError`, o decodificador do `p
 3. Erros de leitura de `.plist` usam o texto do leitor Go, não o do `plistlib`; erros de sistema usam o formato `[Errno N] ...: 'caminho'` para os casos comuns (pasta, permissão).
 4. `show_validation_report` escreve em um `io.Writer` e não desenha o cabeçalho do `utils.head`.
 
+## Fase Alpha: tudo portado, ainda sem verificação
+
+Todos os módulos do projeto original têm agora um equivalente em Go, e `go run ./cmd/opcore-simplify` (sem argumentos) inicia o mesmo menu interativo. Os módulos portados nesta fase (`compat`, `customizer`, `app`, os 24 patches ACPI, `smbios/menu.go`, `kextmaestro/menu.go`) foram escritos por leitura cuidadosa do Python, **sem testes de paridade**. Eles só passam por `gofmt`, `go vet` e `go build`. A fase Beta é para testar contra o original e corrigir.
+
+Pontos já conhecidos para a fase Beta:
+
+1. `fix_apic_processor_id` chama `dropping_the_table("APIC")` com `str`, e o original levanta `TypeError`; o Go reproduz o erro (o patch APIC falha em CPUs HEDT, igual ao Python).
+2. `updater.py` (auto-atualização do script) não foi portado. Não há download automático do `iasl`: se faltar, o programa termina como o original quando não consegue baixá-lo.
+3. `efi.Builder` não tem a barra de progresso por etapa; os textos de tela (`head`) não limpam a tela.
+4. Os adaptadores `acpiguru.Patch` → `kextmaestro.ACPIPatch` copiam o estado em cada chamada.
+5. Binários reais (`macserial`, `iasl`, `netsh`, `nmcli`, `networksetup`, `security`) nunca foram executados aqui.
+6. O plist binário e o `get_commits` do `github.py` continuam sem port.
+
 ## Módulos implementados: `internal/efi` e serial SMBIOS
 
 ### Serial SMBIOS (`internal/smbios/serial.go`)
@@ -299,7 +315,7 @@ Porta `build_opencore_efi`: cria a pasta de resultado, copia o OpenCorePkg, zera
 
 ## Próxima etapa sugerida
 
-0. Caminho mais rápido até uma ferramenta completa: `compatibility_checker.py`, `hardware_customizer.py`, o fluxo principal (`OpCore-Simplify.py`) com o comando `build` na CLI e, por último, os patches ACPI. (`report_validator.py` já está feito.)
+0. Alpha concluída (tudo portado). Próximo: Beta, com testes de paridade dos módulos da fase Alpha e correção de bugs.
 1. **`acpi_guru.py`**, o maior módulo (3355 linhas), em passos. Feito: `dsdt.py` (passo 1) e a carga/seleção/auxiliares (passo 2). Próximo: os patches, em grupos (primeiro os pequenos: `add_*` de dispositivos e `drop`, depois `fake_embedded_controller`, `fix_system_clock_awac`, `enable_cpu_power_management`, `fix_irq_conflicts`, `disable_unsupported_device` e o restante), cada grupo com paridade contra o original. Só depois o `efi.Builder` deixa de exigir `ACPIUnavailable`.
 2. **Comando `build` na CLI**, ligando o seletor de hardware (relatório JSON), a compatibilidade, o modelo SMBIOS e a montagem.
 3. **Verificação do `macserial` real**, quando você aprovar a execução do binário.

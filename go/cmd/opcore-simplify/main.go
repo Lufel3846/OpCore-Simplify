@@ -1,5 +1,5 @@
 // Command opcore-simplify is the Go command-line front end of the OpCore
-// Simplify port. For now it exposes only the macos package.
+// Simplify port. With no arguments it runs the interactive flow; the macos subcommand exposes the macos package.
 package main
 
 import (
@@ -8,10 +8,12 @@ import (
 	"io"
 	"os"
 
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/app"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/macos"
 )
 
 const usage = `usage:
+  opcore-simplify                           interactive OpCore Simplify
   opcore-simplify macos latest [--stable]   newest Darwin version (default includes beta)
   opcore-simplify macos lowest              oldest supported Darwin version
   opcore-simplify macos name <darwin>       macOS release name for a Darwin version
@@ -19,6 +21,10 @@ const usage = `usage:
 `
 
 func main() {
+	// No arguments starts the interactive flow of OpCore-Simplify.py.
+	if len(os.Args) == 1 {
+		os.Exit(app.Run())
+	}
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
