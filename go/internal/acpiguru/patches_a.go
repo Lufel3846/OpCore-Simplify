@@ -2,6 +2,7 @@ package acpiguru
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -374,6 +375,9 @@ func (g *Guru) ConvertIRQToInt(irq int) int64 {
 	if irq < 0 {
 		return 1
 	}
+	if irq > 62 {
+		return math.MaxInt64 // Python's int is unbounded; callers only compare with 16-bit values
+	}
 	return int64(1) << uint(irq)
 }
 
@@ -409,8 +413,12 @@ func aPySetOrder(vals []int) []int {
 	table := make([]slot, mask+1)
 	fill := 0
 	insert := func(tbl []slot, mask, v int, checkDup bool) bool {
-		i := v & mask
-		perturb := uint(v)
+		h := v
+		if v == -1 {
+			h = -2 // hash(-1) is -2 in CPython
+		}
+		i := h & mask
+		perturb := uint(h)
 		for {
 			probes := 0
 			if i+9 <= mask {
