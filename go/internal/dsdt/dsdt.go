@@ -69,11 +69,27 @@ type Tables struct {
 	m     map[string]*Table
 }
 
+// NoneTablesError is the AttributeError/TypeError Python raises when acpi_tables
+// is None (OCPE.select_hardware_report sets it to None). A nil *Tables panics
+// with it, and the caller turns the panic back into an error.
+type NoneTablesError struct{}
+
+func (NoneTablesError) Error() string {
+	return "AttributeError: 'NoneType' object has no attribute 'items'"
+}
+
+func (t *Tables) check() {
+	if t == nil {
+		panic(NoneTablesError{})
+	}
+}
+
 // NewTables returns an empty table dict.
 func NewTables() *Tables { return &Tables{m: map[string]*Table{}} }
 
 // Set assigns a table; an existing key keeps its position, as a dict does.
 func (t *Tables) Set(name string, tbl *Table) {
+	t.check()
 	if _, ok := t.m[name]; !ok {
 		t.order = append(t.order, name)
 	}
@@ -82,12 +98,14 @@ func (t *Tables) Set(name string, tbl *Table) {
 
 // Get returns the table stored under name.
 func (t *Tables) Get(name string) (*Table, bool) {
+	t.check()
 	v, ok := t.m[name]
 	return v, ok
 }
 
 // Pop removes a key, if present.
 func (t *Tables) Pop(name string) {
+	t.check()
 	if _, ok := t.m[name]; !ok {
 		return
 	}
@@ -101,13 +119,20 @@ func (t *Tables) Pop(name string) {
 }
 
 // Len is len(acpi_tables).
-func (t *Tables) Len() int { return len(t.order) }
+func (t *Tables) Len() int {
+	t.check()
+	return len(t.order)
+}
 
 // Names lists the keys in insertion order.
-func (t *Tables) Names() []string { return append([]string{}, t.order...) }
+func (t *Tables) Names() []string {
+	t.check()
+	return append([]string{}, t.order...)
+}
 
 // Values lists the tables in insertion order.
 func (t *Tables) Values() []*Table {
+	t.check()
 	out := make([]*Table, 0, len(t.order))
 	for _, n := range t.order {
 		out = append(out, t.m[n])
