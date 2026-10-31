@@ -186,7 +186,7 @@ func writeZipEntry(f *zip.File, target string) error {
 }
 
 // ReadFile mirrors Utils.read_file. A missing path returns (nil, nil). The
-// extension selects the decoder: ".json" → pyjson.Load, ".plist" → plist.Unmarshal,
+// extension selects the decoder: ".json" → pyjson.LoadFile (json.load on a text file), ".plist" → plist.Unmarshal,
 // anything else returns the raw bytes.
 func ReadFile(path string) (any, error) {
 	if _, err := os.Stat(path); err != nil {
@@ -203,7 +203,7 @@ func ReadFile(path string) (any, error) {
 	case ".plist":
 		return plist.Unmarshal(data)
 	case ".json":
-		return pyjson.Load(data)
+		return pyjson.LoadFile(data)
 	}
 	return data, nil
 }

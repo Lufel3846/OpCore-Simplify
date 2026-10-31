@@ -12,11 +12,11 @@ Licença: BSD 3-Clause, Copyright (c) 2024, lzhoang2601. Veja [`LICENSE`](LICENS
 | `Scripts/utils.py` (`parse_darwin_version`) | `internal/macos` | Implementado e testado contra o Python |
 | `Scripts/datasets/mac_model_data.py` (tabela `mac_devices`) | `internal/smbios` | Implementado e testado contra o Python (gerado a partir do original) |
 | `smbios.SMBIOS.select_smbios_model` | `internal/smbios` | Implementado e testado contra o Python (38.880 casos) |
+| `Scripts/report_validator.py` | `internal/validator` | Implementado e comparado com o original em quase 3.000 relatórios (mutações de cada campo e de arquivo) |
 | `Scripts/compatibility_checker.py` + datasets de CPU/GPU/chipset/PCI | — | Pendente |
+| `wifi_profile_extractor.py` | `internal/wifi` | Implementado e testado contra o Python com comandos simulados |
 | Detecção de hardware (`Report.json` / Hardware Sniffer) | — | Pendente |
-| `Scripts/acpi_guru.py`, `dsdt.py`, `datasets/acpi_patch_data.py` | — | Pendente |
-| `Scripts/kext_maestro.py`, `datasets/kext_data.py` | — | Pendente |
-| `Scripts/smbios.py` (geração de serial/MLB/UUID) | — | Pendente |
+| `Scripts/dsdt.py`, `acpi_guru.py` (carga, seleção, auxiliares), `datasets/acpi_patch_data.py` | `internal/dsdt`, `internal/acpiguru` | Implementados e testados contra o Python. Os 24 patches que geram SSDTs ainda estão pendentes |
 | `utils.py` (leitura/escrita de plist via `plistlib`, XML) | `internal/plist` | Implementado e testado contra o `plistlib` (binário pendente) |
 | `utils.py` (JSON via `json`, busca de caminhos, zip, leitura/escrita de arquivos) | `internal/pyjson`, `internal/fsutil` | Implementado e testado contra o Python |
 | `integrity_checker.py` | `internal/integrity` | Implementado e testado contra o Python |
@@ -254,6 +254,25 @@ Segundo passo do `acpi_guru.py`, sobre o `internal/dsdt`: a carga das tabelas, a
 5. `get_unique_device` perde o argumento `path`, que o original não usa. `apply_acpi_patches` ordena `Comment` só quando todos são strings ou todos são inteiros; tipos mistos devolvem o `TypeError` do Python.
 6. Os textos impressos vão para `Log`; não são reproduzidos byte a byte (`head()` e `adjust_window_size` não são emulados). Os prompts são idênticos.
 
+## Módulo implementado: `internal/validator` (`report_validator.py`)
+
+Porta o `ReportValidator`: valida o `Report.json` contra o esquema e devolve `(válido, erros, avisos, dados limpos)` com as mesmas mensagens e a mesma ordem das chaves. O esquema e os padrões **não são digitados à mão**: o `tools/gen_report_schema.py` lê o `ReportValidator().SCHEMA` do original e gera `schema_gen.go`.
+
+### Como a equivalência é verificada
+
+`parity_test.go` roda o `ReportValidator.validate_report` **original** (`testdata/pyref_validator.py`) e o Go sobre os mesmos arquivos: 2.947 relatórios gerados a partir de um relatório válido, trocando **cada** valor e removendo **cada** chave por 25 valores (nulo, número, vazio, `"Desktop\n"`, dígitos não ASCII, lista, dicionário...) e acrescentando chaves desconhecidas em cada dicionário (482 válidos, 2.465 inválidos); mais 34 cenários de arquivo (CRLF, `\r`, BOM, UTF-8 inválido ou truncado, JSON truncado, vírgula final, dados extras, raiz que não é objeto, `NaN`, inteiro enorme, chaves duplicadas, extensões `.txt`/sem extensão/`.JSON`/`.plist`, arquivo ausente e pasta). Comparados: validade, lista de erros, lista de avisos e os dados limpos (inclusive a ordem das chaves). A mutação de cinco comportamentos (`$` antes de `\n`, `\d` Unicode, avisos, mensagem, descarte de valores inválidos) faz os testes falharem.
+
+### Mensagens de erro do JSON (`internal/pyjson`)
+
+Como o validador mostra o texto do `json.JSONDecodeError`, o decodificador do `pyjson` foi reescrito sobre o scanner em C do CPython: mesmas mensagens e posições em caracteres (`Expecting ',' delimiter: line 1 column 8 (char 7)`), `Illegal trailing comma`, BOM, `\r\n` traduzido na leitura em modo texto e as mensagens de `UnicodeDecodeError` do UTF-8 (`invalid start byte`, `invalid continuation byte`, `unexpected end of data`). `errors_test.go` compara o texto da exceção em mais de 8.000 documentos alterados ao acaso (arquivo e `json.loads(bytes)`), com `surrogatepass` e sub-rogados soltos preservados em WTF-8.
+
+### Diferenças e limitações
+
+1. As mensagens seguem o **Python 3.13** (que acrescentou `Illegal trailing comma`); versões anteriores dizem `Expecting property name enclosed in double quotes` nesse caso.
+2. `json.loads(bytes)` com UTF-16/32 não é suportado, só UTF-8. Inteiros com mais de 4.300 dígitos e aninhamento acima do limite de recursão do Python não são reproduzidos.
+3. Erros de leitura de `.plist` usam o texto do leitor Go, não o do `plistlib`; erros de sistema usam o formato `[Errno N] ...: 'caminho'` para os casos comuns (pasta, permissão).
+4. `show_validation_report` escreve em um `io.Writer` e não desenha o cabeçalho do `utils.head`.
+
 ## Módulos implementados: `internal/efi` e serial SMBIOS
 
 ### Serial SMBIOS (`internal/smbios/serial.go`)
@@ -280,6 +299,7 @@ Porta `build_opencore_efi`: cria a pasta de resultado, copia o OpenCorePkg, zera
 
 ## Próxima etapa sugerida
 
+0. Caminho mais rápido até uma ferramenta completa: `compatibility_checker.py`, `hardware_customizer.py`, o fluxo principal (`OpCore-Simplify.py`) com o comando `build` na CLI e, por último, os patches ACPI. (`report_validator.py` já está feito.)
 1. **`acpi_guru.py`**, o maior módulo (3355 linhas), em passos. Feito: `dsdt.py` (passo 1) e a carga/seleção/auxiliares (passo 2). Próximo: os patches, em grupos (primeiro os pequenos: `add_*` de dispositivos e `drop`, depois `fake_embedded_controller`, `fix_system_clock_awac`, `enable_cpu_power_management`, `fix_irq_conflicts`, `disable_unsupported_device` e o restante), cada grupo com paridade contra o original. Só depois o `efi.Builder` deixa de exigir `ACPIUnavailable`.
 2. **Comando `build` na CLI**, ligando o seletor de hardware (relatório JSON), a compatibilidade, o modelo SMBIOS e a montagem.
 3. **Verificação do `macserial` real**, quando você aprovar a execução do binário.
