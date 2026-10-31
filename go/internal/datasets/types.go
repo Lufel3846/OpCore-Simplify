@@ -149,3 +149,11 @@ func LookupID(entries []IDEntry, key any) (SubsystemIDs, bool) {
 	}
 	return SubsystemIDs{}, false
 }
+
+// ACPIPatchInfo mirrors acpi_patch_data.PatchInfo without the mutable checked
+// flag; the selection state lives in acpiguru.
+type ACPIPatchInfo struct {
+	Name         string
+	Description  string
+	FunctionName string
+}

@@ -237,6 +237,23 @@ Primeira etapa do `acpi_guru.py`: porta o `dsdt.py`, a camada em que o `ACPIGuru
 5. `get_devices(search=None)` (que devolve lista vazia) não é representável: o Go exige uma string.
 6. Os textos impressos são enviados para `Log`; não são reproduzidos byte a byte.
 
+## Módulo em andamento: `internal/acpiguru` (`acpi_guru.py`, passo 2)
+
+Segundo passo do `acpi_guru.py`, sobre o `internal/dsdt`: a carga das tabelas, a seleção de patches e os auxiliares que os patches usam. Portado: `read_acpi_tables`, `ensure_dsdt`, `select_acpi_tables`, `select_acpi_patches`, `customize_patch_selection`, `is_intel_hedt_cpu`, `get_patch_index`, `get_unique_name`, `get_unique_device`, `sorted_nicely`, `get_data`, `write_ssdt`, `apply_acpi_patches`, `dropping_the_table`, `drop_cpu_tables`, além de `utils.hex_to_bytes`, `utils.normalize_path` e `utils.exit_program`. A lista de patches (`acpi_patch_data.patches`) é gerada pelo `tools/gen_datasets.py` (`internal/datasets/acpi_patch_gen.go`).
+
+### Como a equivalência é verificada
+
+`parity_test.go` roda o `Scripts/acpi_guru.py` **original** (`testdata/pyref_acpiguru.py`, sem modificá-lo) e o Go com os mesmos passos e as mesmas respostas de prompt, e compara os valores, os erros e os **prompts** apresentados. Cobertura: todas as gerações de CPU Intel e todos os chipsets nos relatórios de `select_acpi_patches` (mais de 40 seleções diferentes, laptop/desktop, Surface, HP, IMEI, Yoga, rede USB, I2C e 28 formas de relatório inválido), as entradas de `customize_patch_selection` (índices inválidos, enormes, repetidos, `b` e `q`), a carga de tabelas (pasta, arquivo, pasta `ACPI` aninhada, arquivo `Patched`, falha parcial, nenhuma tabela) com os prompts de `ensure_dsdt`, `normalize_path` (aspas, `~`, links simbólicos, caminhos inexistentes) e `write_ssdt` com o `iasl` falso em três modos (compila, falha, não gera `.aml`). A mutação de sete comportamentos (cortes de lista, `I2C`, `lower()` do `sorted_nicely`, aspas antes de `\n`, centralização do `exit_program`) faz os testes falharem. O gerador de tabelas e o `iasl` falso foram movidos para `internal/dsdt/dsdttest` e são compartilhados pelos dois pacotes.
+
+### Diferenças e limitações
+
+1. **Código inalcançável do original não foi portado.** O original compara `_table_signature(...)` (bytes) com a string `"DSDT"`, o que nunca é verdadeiro no Python 3. Por isso o ramo de "pré-patches" (`pre_patches`/`dsdt_patches`) nunca roda: um DSDT que não desmonta é só informado como não desmontado. O Go reproduz esse comportamento.
+2. **Os patches em si ainda não estão portados** (ALS, PNLF, FakeEC, RTCAWAC, PLUG e os demais). Por isso o `efi.Builder` continua exigindo `ACPIUnavailable`.
+3. `sorted_nicely` usa só dígitos ASCII (Python aceita outros no `isdigit`). Em `customize_patch_selection` valem os dígitos decimais de qualquer escrita, como no `int()`; dígitos como `²` (que o Python rejeita com `ValueError`) são ignorados.
+4. `normalize_path` foi portado e testado em POSIX; o ramo do Windows (`\` para `/`) está escrito, mas não foi testado. `normpath` mantém `//` inicial como o Python.
+5. `get_unique_device` perde o argumento `path`, que o original não usa. `apply_acpi_patches` ordena `Comment` só quando todos são strings ou todos são inteiros; tipos mistos devolvem o `TypeError` do Python.
+6. Os textos impressos vão para `Log`; não são reproduzidos byte a byte (`head()` e `adjust_window_size` não são emulados). Os prompts são idênticos.
+
 ## Módulos implementados: `internal/efi` e serial SMBIOS
 
 ### Serial SMBIOS (`internal/smbios/serial.go`)
@@ -263,7 +280,7 @@ Porta `build_opencore_efi`: cria a pasta de resultado, copia o OpenCorePkg, zera
 
 ## Próxima etapa sugerida
 
-1. **`acpi_guru.py`**, o maior módulo (3355 linhas), em passos. Feito: `dsdt.py`, a base. Próximo: carga das tabelas e seleção (`read_acpi_tables`, `ensure_dsdt`, `select_acpi_patches`, `apply_acpi_patches`, `write_ssdt`), depois os patches, um a um. Sem o restante, a montagem é completa apenas para sistemas que não precisam de patches ACPI.
+1. **`acpi_guru.py`**, o maior módulo (3355 linhas), em passos. Feito: `dsdt.py` (passo 1) e a carga/seleção/auxiliares (passo 2). Próximo: os patches, em grupos (primeiro os pequenos: `add_*` de dispositivos e `drop`, depois `fake_embedded_controller`, `fix_system_clock_awac`, `enable_cpu_power_management`, `fix_irq_conflicts`, `disable_unsupported_device` e o restante), cada grupo com paridade contra o original. Só depois o `efi.Builder` deixa de exigir `ACPIUnavailable`.
 2. **Comando `build` na CLI**, ligando o seletor de hardware (relatório JSON), a compatibilidade, o modelo SMBIOS e a montagem.
 3. **Verificação do `macserial` real**, quando você aprovar a execução do binário.
 4. **Execução real de `netsh`, `nmcli`, `networksetup` e `security`**, quando você aprovar, para verificar o Wi-Fi fora dos comandos simulados.

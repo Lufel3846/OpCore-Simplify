@@ -3,7 +3,7 @@
 Usage: python3 -I go/tools/gen_datasets.py <repo_root> <out_dir>
 
 Writes into <out_dir> (package datasets):
-  kext_data_gen.go, pci_data_gen.go, cpu_data_gen.go, codec_layouts_gen.go
+  kext_data_gen.go, pci_data_gen.go, cpu_data_gen.go, codec_layouts_gen.go, acpi_patch_gen.go
 Values are read from the Python objects, never typed by hand. Darwin version
 defaults are resolved by the original KextInfo constructor and copied as-is.
 """
@@ -14,7 +14,7 @@ import sys
 repo, out_dir = sys.argv[1], sys.argv[2]
 sys.path.insert(0, repo)
 
-from Scripts.datasets import chipset_data, codec_layouts, cpu_data, kext_data, pci_data  # noqa: E402
+from Scripts.datasets import acpi_patch_data, chipset_data, codec_layouts, cpu_data, kext_data, pci_data  # noqa: E402
 
 # kext_data draws some download IDs at import time (random.choices, 9 digits).
 # Reloading it shows which entries change, so the generated code draws them too.
@@ -137,6 +137,15 @@ for name in ("IntelChipsets", "AMDChipsets"):
     items = ", ".join(q(x) for x in getattr(chipset_data, name))
     lines.append("var {} = []string{{{}}}\n\n".format(name, items))
 write("chipset_data_gen.go", "".join(lines))
+
+# ---- acpi_patch_data.py ----------------------------------------------------
+lines = [HEADER]
+items = ", ".join(
+    "{{Name: {}, Description: {}, FunctionName: {}}}".format(q(p.name), q(p.description), q(p.function_name))
+    for p in acpi_patch_data.patches
+)
+lines.append("// ACPIPatches is acpi_patch_data.patches, in order.\nvar ACPIPatches = []ACPIPatchInfo{{{}}}\n".format(items))
+write("acpi_patch_gen.go", "".join(lines))
 
 # ---- cpu_data.py -----------------------------------------------------------
 lines = [HEADER]
