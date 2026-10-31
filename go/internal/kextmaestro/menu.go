@@ -3,6 +3,7 @@ package kextmaestro
 import (
 	"errors"
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
 	"strconv"
 	"strings"
 
@@ -32,56 +33,21 @@ func padLeft(s string, width int) string {
 	return s
 }
 
-func pyCenter(s string, width int) string {
-	pad := width - len([]rune(s))
-	if pad <= 0 {
-		return s
-	}
-	left := pad/2 + (pad & width & 1)
-	return strings.Repeat(" ", left) + s + strings.Repeat(" ", pad-left)
-}
+func pyCenter(s string, width int) string { return term.Center(s, width) }
 
-// head mirrors utils.head (without clearing the screen).
-func (m *Maestro) head(text string, width int) {
-	separator := strings.Repeat("═", width-2)
-	title := " " + text + " "
-	if r := []rune(title); len(r) > width-2 {
-		title = string(r[:width-4]) + "..."
-	}
-	title = pyCenter(title, width-2)
-	m.logf("╔%s╗\n║%s║\n╚%s╝\n", separator, title, separator)
+// head mirrors utils.head(text, width, resize).
+func (m *Maestro) head(text string, width int, resize bool) {
+	term.Head(m.Log, text, width, resize)
 }
 
 // adjustWindowSize mirrors utils.adjust_window_size.
-func (m *Maestro) adjustWindowSize(content string) {
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	if content == "" {
-		lines = nil
-	} else if lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	cols := 0
-	for _, l := range lines {
-		if n := len([]rune(l)); n > cols {
-			cols = n
-		}
-	}
-	rows := len(lines) + 6
-	if rows < 30 {
-		rows = 30
-	}
-	cols += 2
-	if cols < 100 {
-		cols = 100
-	}
-	m.logf("\033[8;%d;%dt\n", rows, cols)
-}
+func (m *Maestro) adjustWindowSize(content string) { term.AdjustWindowSize(m.Log, content) }
 
 // ExitProgram mirrors utils.exit_program. It returns ErrExit unless reading the
 // final Enter fails.
 func (m *Maestro) ExitProgram() error {
 	const width = 68
-	m.head("OpCore Simplify", width)
+	m.head("OpCore Simplify", width, true)
 	m.logf("\n%s\n\n", pyCenter("For more information, to report errors, or to contribute to the product:", width))
 	sep := strings.Repeat("─", width-4)
 	m.logf(" ┌%s┐ \n", sep)
@@ -166,7 +132,7 @@ func (m *Maestro) KextConfigurationMenu(macosVersion string) error {
 		content := strings.Join(contents, "\n")
 
 		m.adjustWindowSize(content)
-		m.head("Configure Kernel Extensions", 68)
+		m.head("Configure Kernel Extensions", 68, false)
 		m.logf("%s\n", content)
 		option, err := m.input("Select your option: ")
 		if err != nil {

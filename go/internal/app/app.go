@@ -115,6 +115,7 @@ func New() (*App, error) {
 	wf := &wifi.Extractor{
 		OS:    osName(),
 		Input: in,
+		Log:   out,
 		Run: func(args []string) (string, int) {
 			so, _, rc := runCommand(args)
 			return so, rc
@@ -193,7 +194,7 @@ func (a *App) in(prompt string) (string, error) { return a.U.RequestInput(prompt
 // SelectHardwareReport mirrors select_hardware_report. data is the report.
 func (a *App) SelectHardwareReport() (string, any, error) {
 	a.AC.Dsdt = nil
-	a.AC.Acpi.AcpiTables = dsdt.NewTables()
+	a.AC.Acpi.AcpiTables = nil // acpi_tables = None, as in the original
 	nt := runtime.GOOS == "windows"
 
 	for {
@@ -222,9 +223,6 @@ func (a *App) SelectHardwareReport() (string, any, error) {
 			return "", nil, a.U.ExitProgram()
 		}
 		if strings.ToLower(userInput) == "e" {
-			if osName() == "Windows" {
-				a.U.Head("Gathering Hardware Sniffer")
-			}
 			sniffer, err := a.O.GatherHardwareSniffer(osName(), func(owner, repo string) (*github.Release, error) {
 				return github.GetLatestRelease(a.O.Fetcher, owner, repo)
 			})
@@ -1004,7 +1002,7 @@ func Run() int {
 		return 1
 	}
 	for {
-		err := a.Main()
+		err := a.safeMain()
 		if err == nil {
 			continue
 		}
@@ -1019,4 +1017,19 @@ func Run() int {
 			return 1
 		}
 	}
+}
+
+// safeMain runs Main and turns the panic of a nil acpi_tables (Python's
+// AttributeError on None) back into an error.
+func (a *App) safeMain() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(dsdt.NoneTablesError); ok {
+				err = e
+				return
+			}
+			panic(r)
+		}
+	}()
+	return a.Main()
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"errors"
+	"io"
 	"math/rand"
 	"os"
 	"strings"
@@ -24,6 +25,8 @@ const (
 type Prodigy struct {
 	// RequestInput answers the codec layout prompt.
 	RequestInput func(prompt string) (string, error)
+	// Log receives the codec layout screen. Nil discards it.
+	Log io.Writer
 	// Choose mirrors random.choice: it returns the index of the default layout.
 	Choose func(n int) int
 	// KernelPatches mirrors gatheringFiles.get_kernel_patches. It never fails;
@@ -41,6 +44,7 @@ type Prodigy struct {
 func NewProdigy(g *gathering.Gatherer) *Prodigy {
 	return &Prodigy{
 		RequestInput:      readLine,
+		Log:               os.Stdout,
 		Choose:            rand.Intn,
 		KernelPatches:     g.GetKernelPatches,
 		AMDVanillaURL:     AMDVanillaPatchesURL,

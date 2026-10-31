@@ -7,6 +7,7 @@ package customizer
 import (
 	"errors"
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
 	"io"
 	"math/big"
 	"sort"
@@ -51,28 +52,8 @@ func (c *Customizer) printf(format string, a ...any) {
 
 func (c *Customizer) println(s string) { c.printf("%s\n", s) }
 
-// head mirrors utils.head (banner only; the screen clear and the window resize
-// are not reproduced).
-func (c *Customizer) head(text string) {
-	const width = 68
-	sep := strings.Repeat("═", width-2)
-	title := " " + text + " "
-	if r := []rune(title); len(r) > width-2 {
-		title = string(r[:width-4]) + "..."
-	}
-	title = center(title, width-2)
-	c.printf("╔%s╗\n║%s║\n╚%s╝\n", sep, title, sep)
-}
-
-// center is str.center.
-func center(s string, width int) string {
-	pad := width - len([]rune(s))
-	if pad <= 0 {
-		return s
-	}
-	left := pad/2 + (pad & width & 1)
-	return strings.Repeat(" ", left) + s + strings.Repeat(" ", pad-left)
-}
+// head mirrors utils.head(text).
+func (c *Customizer) head(text string) { term.Head(c.Log, text, 68, true) }
 
 // ---- Python helpers ----------------------------------------------------------
 

@@ -16,6 +16,8 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
+	"io"
 	"os"
 	"strings"
 	"unicode/utf8"
@@ -46,6 +48,16 @@ type Extractor struct {
 	OS string
 	// Input answers a prompt. Nil reads a line from stdin.
 	Input func(prompt string) (string, error)
+	// Log receives the screen text (title boxes and messages). Nil discards it.
+	Log io.Writer
+}
+
+func (e *Extractor) head(text string) { term.Head(e.Log, text, 68, true) }
+
+func (e *Extractor) printf(format string, a ...any) {
+	if e.Log != nil {
+		fmt.Fprintf(e.Log, format, a...)
+	}
 }
 
 // ask answers a prompt through Input, or from stdin when no input is set.
@@ -242,6 +254,8 @@ func authTypePtr(value string) *string {
 
 // AskNetworkCount mirrors ask_network_count: how many networks to process.
 func (e *Extractor) AskNetworkCount(total int) (int, error) {
+	e.head("WiFi Network Retrieval")
+	e.printf("\nFound %d WiFi networks on this device.\n\nHow many networks would you like to process?\n  1-%d - Specific number (default: 5)\n  A   - All available networks\n\n", total, total)
 	choice, err := e.askLower("Enter your choice: ")
 	if err != nil {
 		return 0, err
@@ -374,6 +388,8 @@ func (e *Extractor) preferredMacOS(iface string) ([]Profile, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.head("Administrator Authentication Required")
+	e.printf("\nTo retrieve WiFi passwords from the Keychain, macOS will prompt\nyou for administrator credentials for each WiFi network.\n")
 	return e.ProcessNetworks(ssids, count, e.passwordMacOS)
 }
 
@@ -399,6 +415,8 @@ func (e *Extractor) preferredWindows() ([]Profile, error) {
 	if len(ssids) == 0 {
 		return nil, nil
 	}
+	e.head("WiFi Profile Extractor")
+	e.printf("\nRetrieving passwords for %d network(s)...\n", len(ssids))
 	return e.ProcessNetworks(ssids, len(ssids), e.passwordWindows)
 }
 
@@ -417,6 +435,8 @@ func (e *Extractor) preferredLinux() ([]Profile, error) {
 	if len(ssids) == 0 {
 		return nil, nil
 	}
+	e.head("WiFi Profile Extractor")
+	e.printf("\nRetrieving passwords for %d network(s)...\n", len(ssids))
 	return e.ProcessNetworks(ssids, len(ssids), e.passwordLinux)
 }
 
@@ -453,6 +473,8 @@ func (e *Extractor) interfaces() []string {
 // GetProfiles mirrors get_profiles. It returns the networks with their passwords,
 // or none when the user declines the scan or nothing is found.
 func (e *Extractor) GetProfiles() ([]Profile, error) {
+	e.head("WiFi Profile Extractor")
+	e.printf("\n\033[1;93mNote:\033[0m\n- When using itlwm kext, WiFi appears as Ethernet in macOS\n- You'll need Heliport app to manage WiFi connections in macOS\n- This step will enable auto WiFi connections at boot time\n  and is useful for users installing macOS via Recovery OS\n\n")
 	for {
 		answer, err := e.askLower("Would you like to scan for WiFi profiles? (Yes/no): ")
 		if err != nil {
@@ -464,17 +486,25 @@ func (e *Extractor) GetProfiles() ([]Profile, error) {
 		if answer == "no" {
 			return nil, nil
 		}
+		e.printf("\033[91mInvalid selection, please try again.\033[0m\n\n\n")
 	}
 
 	var profiles []Profile
 	var err error
+	e.head("Detecting WiFi Profiles")
+	e.printf("\nScanning for WiFi profiles...\n")
 	switch e.OS {
 	case "Windows":
 		profiles, err = e.preferredWindows()
 	case "Linux":
 		profiles, err = e.preferredLinux()
 	case "Darwin":
-		for _, iface := range e.interfaces() {
+		ifaces := e.interfaces()
+		if len(ifaces) == 0 {
+			e.printf("No WiFi interfaces detected.\n")
+		}
+		for _, iface := range ifaces {
+			e.printf("Checking interface: %s\n", iface)
 			found, err := e.preferredMacOS(iface)
 			if err != nil {
 				return nil, err
@@ -490,10 +520,26 @@ func (e *Extractor) GetProfiles() ([]Profile, error) {
 	}
 
 	if len(profiles) == 0 {
+		e.head("WiFi Profile Extractor")
+		e.printf("\nNo WiFi profiles with saved passwords were found.\n")
 		if _, err := e.ask(PressEnter); err != nil {
 			return nil, err
 		}
 	}
+	e.head("WiFi Profile Extractor")
+	e.printf("\nFound the following WiFi profiles with saved passwords:\n\nIndex  SSID                             Password\n-------------------------------------------------------\n")
+	for i, pr := range profiles {
+		ssid, pw := []rune(pr.SSID), []rune(pr.Password)
+		ss, ps := string(ssid), string(pw)
+		if len(ssid) > 31 {
+			ss = string(ssid[:31]) + "..."
+		}
+		if len(pw) > 12 {
+			ps = string(pw[:12]) + "..."
+		}
+		e.printf("%-6d %-32s %-8s\n", i+1, ss, ps)
+	}
+	e.printf("\nSuccessfully applied %d WiFi profiles.\n\n", len(profiles))
 	if _, err := e.ask(PressEnter); err != nil {
 		return nil, err
 	}

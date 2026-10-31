@@ -60,6 +60,8 @@ func darwinAtLeast(current, limit string) (bool, error) {
 // report (a *plist.Dict from the JSON report); it returns needs_oclp, which may
 // become true when the user picks an audio or Wi-Fi option that needs root patches.
 func (m *Maestro) SelectRequiredKexts(report any, macosVersion string, needsOCLP bool, acpiPatches []ACPIPatch) (bool, error) {
+	m.head("Select Required Kernel Extensions", 68, true)
+	m.logf("\nChecking for required kernel extensions...\n")
 	for _, k := range m.Kexts {
 		k.Checked = k.Required
 	}

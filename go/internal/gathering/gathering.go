@@ -13,6 +13,7 @@ package gathering
 import (
 	"errors"
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
 	"io"
 	"os"
 	"path/filepath"
@@ -489,7 +490,7 @@ func checkedByName(kexts []*Kext, dataIndex map[string]int, name string) (bool, 
 // GatherBootloaderKexts mirrors gather_bootloader_kexts. dataIndex is
 // kext_data.kext_index_by_name, and kexts must be in the same order.
 func (g *Gatherer) GatherBootloaderKexts(kexts []*Kext, dataIndex map[string]int, macosVersion string) (bool, error) {
-	g.printf("Gathering Files")
+	term.Head(g.Out, "Gathering Files", 68, true)
 	g.printf("")
 	g.printf("Please wait for download OpenCorePkg, kexts and macserial...")
 	history, err := g.LoadDownloadHistory()
@@ -847,7 +848,7 @@ func (g *Gatherer) GatherHardwareSniffer(osName string, latest func(owner, repo 
 	if osName != "Windows" {
 		return "", nil
 	}
-	g.printf("Gathering Hardware Sniffer")
+	term.Head(g.Out, "Gathering Hardware Sniffer", 68, true)
 	const productName = "Hardware-Sniffer-CLI.exe"
 	const repoOwner, repoName = "lzhoang2801", "Hardware-Sniffer"
 	destination := filepath.Join(g.ScriptsDir, productName)

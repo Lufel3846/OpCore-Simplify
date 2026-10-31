@@ -6,6 +6,7 @@ package acpiguru
 import (
 	"errors"
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
 	"io"
 	"math/big"
 	"os"
@@ -317,7 +318,8 @@ func (g *Guru) ReadACPITables(path string) (string, bool, error) {
 	if path == "" {
 		return "", false, nil
 	}
-	g.logf("Loading ACPI Table(s)\nby CorpNewt\n\n")
+	term.Head(g.Log, "Loading ACPI Table(s)", 68, true)
+	g.logf("by CorpNewt\n\n")
 	var tables []string
 	prior := g.Acpi.AcpiTables
 	g.Acpi.AcpiTables = dsdt.NewTables()
@@ -439,6 +441,7 @@ func (g *Guru) EnsureDSDT(allowAny bool) (bool, error) {
 // SelectACPITables mirrors select_acpi_tables.
 func (g *Guru) SelectACPITables() (string, bool, error) {
 	for {
+		term.Head(g.Log, "Select ACPI Tables", 68, true)
 		g.logf("\nQ. Quit\n \n")
 		menu, err := g.RequestInput("Please drag and drop ACPI Tables folder here: ")
 		if err != nil {

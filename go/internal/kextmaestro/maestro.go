@@ -371,6 +371,7 @@ func containsString(list []string, s string) bool {
 func (m *Maestro) VerifyKextCompatibility(kextNames []string, target string) (map[string]bool, error) {
 	type incompatible struct {
 		name string
+		lilu bool
 	}
 	var found []incompatible
 	seen := map[string]bool{}
@@ -389,7 +390,13 @@ func (m *Maestro) VerifyKextCompatibility(kextNames []string, target string) (ma
 			return nil, err
 		}
 		if !compatible && kext.AllowForceLoad {
-			found = append(found, incompatible{kext.Name})
+			lilu := false
+			for _, r := range kext.RequiresKexts {
+				if r == "Lilu" {
+					lilu = true
+				}
+			}
+			found = append(found, incompatible{kext.Name, lilu})
 		}
 	}
 	if len(found) == 0 {
@@ -401,6 +408,16 @@ func (m *Maestro) VerifyKextCompatibility(kextNames []string, target string) (ma
 		noun = "these kexts"
 	}
 	for {
+		m.head("Kext Compatibility Check", 68, true)
+		m.logf("\nIncompatible kexts for the current macOS version (%s):\n\n", target)
+		for i, f := range found {
+			suffix := ""
+			if f.lilu {
+				suffix = " - Lilu Plugin"
+			}
+			m.logf("%2d. %-25s%s\n", i+1, f.name, suffix)
+		}
+		m.logf("\n\033[1;93mNote:\033[0m\n- With Lilu plugins, using the \"-lilubetaall\" boot argument will force them to load.\n- Forcing unsupported kexts can cause system instability. \033[0;31mProceed with caution.\033[0m\n\n")
 		option, err := m.input(fmt.Sprintf("Do you want to force load %s on the unsupported macOS version? (yes/No): ", noun))
 		if err != nil {
 			return nil, err

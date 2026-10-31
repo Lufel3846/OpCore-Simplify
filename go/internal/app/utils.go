@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
 	"io"
 	"os"
 	"os/exec"
@@ -87,14 +88,7 @@ func (u *Utils) Pause() error {
 }
 
 // center is str.center.
-func center(s string, width int) string {
-	pad := width - len([]rune(s))
-	if pad <= 0 {
-		return s
-	}
-	left := pad/2 + (pad & width & 1)
-	return strings.Repeat(" ", left) + s + strings.Repeat(" ", pad-left)
-}
+func center(s string, width int) string { return term.Center(s, width) }
 
 func padRight(s string, width int) string {
 	if n := width - len([]rune(s)); n > 0 {
@@ -106,26 +100,10 @@ func padRight(s string, width int) string {
 // Head mirrors head(text, 68, resize=True). An empty text uses the script name
 // (head(None)).
 func (u *Utils) Head(text string) {
-	const width = 68
-	u.printf("\033[8;%d;%dt\n", 30, 100) // adjust_window_size("")
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/c", "cls")
-	} else {
-		cmd = exec.Command("clear")
-	}
-	cmd.Stdout = u.Out
-	_ = cmd.Run()
 	if text == "" {
 		text = u.ScriptName
 	}
-	sep := strings.Repeat("═", width-2)
-	title := " " + text + " "
-	if r := []rune(title); len(r) > width-2 {
-		title = string(r[:width-4]) + "..."
-	}
-	title = center(title, width-2)
-	u.printf("╔%s╗\n║%s║\n╚%s╝\n", sep, title, sep)
+	term.Head(u.Out, text, 68, true)
 }
 
 // ProgressBar mirrors progress_bar.

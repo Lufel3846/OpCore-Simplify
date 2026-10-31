@@ -10,6 +10,7 @@ package compat
 import (
 	"errors"
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
 	"io"
 	"strings"
 	"time"
@@ -165,30 +166,8 @@ func (c *Checker) requestInputExit() {
 	check(ErrExit)
 }
 
-func center(s string, width int) string {
-	n := len([]rune(s))
-	if n >= width {
-		return s
-	}
-	marg := width - n
-	left := marg/2 + (marg & width & 1)
-	return strings.Repeat(" ", left) + s + strings.Repeat(" ", marg-left)
-}
-
-// head mirrors utils.head (screen clear and title box).
-func (c *Checker) head(text string) {
-	const width = 68
-	if c.Log == nil {
-		return
-	}
-	c.printf("\033[H\033[2J")
-	sep := strings.Repeat("═", width-2)
-	title := " " + text + " "
-	if r := []rune(title); len(r) > width-2 {
-		title = string(r[:width-4]) + "..."
-	}
-	c.printf("╔%s╗\n║%s║\n╚%s╝\n", sep, center(title, width-2), sep)
-}
+// head mirrors utils.head(text).
+func (c *Checker) head(text string) { term.Head(c.Log, text, 68, true) }
 
 func pyStr(v any) string {
 	switch x := v.(type) {

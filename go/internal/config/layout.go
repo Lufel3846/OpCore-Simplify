@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
+	"strings"
 
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/datasets"
 	"github.com/Lufel3846/OpCore-Simplify/go/internal/plist"
@@ -108,6 +110,27 @@ func (p *Prodigy) selectAudioCodecLayout(report any, config any, controllerRequi
 	defaultLayout := candidates[p.Choose(len(candidates))]
 
 	for {
+		if p.Log != nil {
+			contents := []string{"", "List of Codec Layouts:", "", "ID   Comment", strings.Repeat("-", 66)}
+			for _, layout := range available {
+				comment := []rune(layout.Comment)
+				if len(comment) > 60 {
+					comment = comment[:60]
+				}
+				line := fmt.Sprintf("%-4d %s", layout.ID, string(comment))
+				if layout == defaultLayout {
+					line = "\033[1;32m" + line + "\033[0m"
+				}
+				contents = append(contents, line)
+			}
+			contents = append(contents, "", "\033[1;93mNote:\033[0m",
+				"- The default layout may not be optimal.",
+				"- Test different layouts to find what works best for your system.", "")
+			content := strings.Join(contents, "\n")
+			term.AdjustWindowSize(p.Log, content)
+			term.Head(p.Log, "Choosing Codec Layout ID", 68, false)
+			fmt.Fprintln(p.Log, content)
+		}
 		answer, err := p.ask(fmt.Sprintf("Enter the ID of the codec layout you want to use (default: %d): ", defaultLayout.ID))
 		if err != nil {
 			return nil, nil, err

@@ -3,6 +3,7 @@ package smbios
 import (
 	"errors"
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
 	"io"
 	"strconv"
 	"strings"
@@ -51,25 +52,11 @@ func (m *Menu) exit() error {
 	return ErrExit
 }
 
-// head mirrors utils.head (banner only; no screen clear or window resize).
+// head mirrors utils.head(text, resize=False).
 func (m *Menu) head(text string) {
-	const width = 68
-	sep := strings.Repeat("═", width-2)
-	title := " " + text + " "
-	if r := []rune(title); len(r) > width-2 {
-		title = string(r[:width-4]) + "..."
+	if m.Log != nil {
+		term.Head(m.Log, text, 68, false)
 	}
-	m.logf("╔%s╗\n║%s║\n╚%s╝\n", sep, center(title, width-2), sep)
-}
-
-// center is str.center.
-func center(s string, width int) string {
-	pad := width - len([]rune(s))
-	if pad <= 0 {
-		return s
-	}
-	left := pad/2 + (pad & width & 1)
-	return strings.Repeat(" ", left) + s + strings.Repeat(" ", pad-left)
 }
 
 // SMBIOSSpecificOptions mirrors SMBIOS.smbios_specific_options.

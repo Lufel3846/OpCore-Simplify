@@ -2,6 +2,7 @@ package acpiguru
 
 import (
 	"fmt"
+	"github.com/Lufel3846/OpCore-Simplify/go/internal/term"
 	"math/big"
 	"os"
 	"os/user"
@@ -328,7 +329,7 @@ func (g *Guru) SelectACPIPatches(hardwareReport, disabledDevices any) error {
 // there Python raises ValueError and this port skips the item.
 func (g *Guru) CustomizePatchSelection() error {
 	for {
-		g.logf("\nList of available patches:\n\n")
+		contents := []string{"", "List of available patches:", ""}
 		for i, p := range g.Patches {
 			box := "[ ]"
 			if p.Checked {
@@ -338,9 +339,13 @@ func (g *Guru) CustomizePatchSelection() error {
 			if p.Checked {
 				line = "\033[1;32m" + line + "\033[0m"
 			}
-			g.logf("%s\n", line)
+			contents = append(contents, line)
 		}
-		g.logf("\n\033[1;93mNote:\033[0m You can select multiple kexts by entering their indices separated by commas (e.g., '1, 2, 3').\n\nB. Back\nQ. Quit\n\n")
+		contents = append(contents, "", "\033[1;93mNote:\033[0m You can select multiple kexts by entering their indices separated by commas (e.g., '1, 2, 3').", "", "B. Back", "Q. Quit", "")
+		content := strings.Join(contents, "\n")
+		term.AdjustWindowSize(g.Log, content)
+		term.Head(g.Log, "Customize ACPI Patch Selections", 68, false)
+		g.logf("%s\n", content)
 		option, err := g.RequestInput("Select your option: ")
 		if err != nil {
 			return err
