@@ -104,6 +104,8 @@ type TableOpts struct {
 	CRLF     bool
 	BodySize int
 	Seed     int64
+	// Lines is the disassembly text; nil uses TextLines.
+	Lines []string
 }
 
 // BuildTable generates raw AML bytes and the matching mixed listing.
@@ -145,7 +147,11 @@ func BuildTable(o TableOpts) Table {
 	var sb strings.Builder
 	sb.WriteString("/*\n * Intel ACPI Component Architecture\n * AML/ASL+ Disassembler version 20230628\n */\n")
 	ci := 0
-	for i, l := range TextLines {
+	text := o.Lines
+	if text == nil {
+		text = TextLines
+	}
+	for i, l := range text {
 		sb.WriteString(l + "\n")
 		for k := 0; k < i%3 && ci < len(chunks); k++ {
 			c := chunks[ci]
