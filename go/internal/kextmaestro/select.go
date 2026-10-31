@@ -170,6 +170,11 @@ func (m *Maestro) SelectRequiredKexts(report any, macosVersion string, needsOCLP
 			return false, err
 		}
 		if tahoe {
+			m.logf("\n\033[1;93mNote:\033[0m macOS Tahoe no longer includes AppleHDA. AppleALC needs one of these restoration methods.\n")
+			m.logf("\n")
+			m.logf("1. \033[1mAppleALC + OCLP\033[0m - Restores AppleHDA with a system root patch\n")
+			m.logf("2. \033[1mAppleALC + SimpleHDA\033[0m - OpenCore injection without audio root patches\n")
+			m.logf("\n")
 			for {
 				answer, err := m.input("Select audio kext for your system: ")
 				if err != nil {
@@ -183,6 +188,8 @@ func (m *Maestro) SelectRequiredKexts(report any, macosVersion string, needsOCLP
 				} else if answer == "2" {
 					selected = append(selected, "AppleALC", "SimpleHDA")
 					break
+				} else {
+					m.logf("\033[91mInvalid selection, please try again.\033[0m\n\n")
 				}
 			}
 		} else {
@@ -320,6 +327,21 @@ func (m *Maestro) SelectRequiredKexts(report any, macosVersion string, needsOCLP
 		}
 
 		if s, ok := gpuCodename.(string); ok && (s == "Navi 21" || s == "Navi 23") {
+			m.logf("\n*** Found %s is AMD %s GPU.\n", gpu.Key, s)
+			m.logf("\n")
+			m.logf("\033[91mImportant: Black Screen Fix\033[0m\n")
+			m.logf("If you experience a black screen after verbose mode:\n")
+			m.logf("    1. Use ProperTree to open config.plist\n")
+			m.logf("    2. Navigate to NVRAM -> Add -> 7C436110-AB2A-4BBB-A880-FE41995C9F82 -> boot-args\n")
+			m.logf("    3. Remove \"-v debug=0x100 keepsyms=1\" from boot-args\n")
+			m.logf("\n")
+			m.logf("\033[1;93mNote:\033[0m\n")
+			m.logf("- AMD %s GPUs have two available kext options:\n", s)
+			m.logf("- You can try different kexts after installation to find the best one for your system\n")
+			m.logf("\n")
+			m.logf("1. \033[1mNootRX\033[0m - Uses latest GPU firmware\n")
+			m.logf("2. \033[1mWhateverGreen\033[0m - Uses original Apple firmware\n")
+			m.logf("\n")
 			intelPresent := false
 			for _, other := range gpus {
 				otherMfr, err := pyrt.Get(other.Value, "Manufacturer")
@@ -332,6 +354,9 @@ func (m *Maestro) SelectRequiredKexts(report any, macosVersion string, needsOCLP
 				}
 			}
 			if intelPresent {
+				m.logf("\033[91mImportant:\033[0m NootRX kext is not compatible with Intel GPUs\n")
+				m.logf("Automatically selecting WhateverGreen kext due to Intel GPU compatibility\n")
+				m.logf("\n")
 				if _, err := m.input("Press Enter to continue..."); err != nil {
 					return false, err
 				}
@@ -347,11 +372,16 @@ func (m *Maestro) SelectRequiredKexts(report any, macosVersion string, needsOCLP
 				option = "2"
 			}
 			selectedOption := 2
+			validOption := false
 			if isDigits(option) {
 				n, _ := strconv.Atoi(option)
 				if n > 0 && n < 3 {
 					selectedOption = n
+					validOption = true
 				}
+			}
+			if !validOption {
+				m.logf("\033[93mInvalid selection, using recommended option: %d\033[0m\n", 2)
 			}
 			if selectedOption == 1 {
 				selected = append(selected, "NootRX")
@@ -775,7 +805,7 @@ func (m *Maestro) selectWifi(selected []string, deviceID any, networkName string
 		}
 	}
 	if !matched && pyrt.InStrings(deviceID, datasets.IntelWiFiIDs) {
-		choice, nOCLP, err := m.intelWifiChoice(macosVersion, needsOCLP)
+		choice, nOCLP, err := m.intelWifiChoice(networkName, macosVersion, needsOCLP)
 		if err != nil {
 			return nil, false, err
 		}
@@ -831,7 +861,9 @@ func (m *Maestro) selectWifi(selected []string, deviceID any, networkName string
 
 // intelWifiChoice mirrors the Intel Wi-Fi prompt: the laobamac fork is offered
 // when its kext is compatible, and the answer picks the kext to install.
-func (m *Maestro) intelWifiChoice(macosVersion string, needsOCLP bool) ([]string, bool, error) {
+func (m *Maestro) intelWifiChoice(networkName, macosVersion string, needsOCLP bool) ([]string, bool, error) {
+	m.logf("\n*** Found %s is Intel WiFi device.\n", networkName)
+	m.logf("\n")
 	darwin, err := macos.ParseVersion(macosVersion)
 	if err != nil {
 		return nil, false, err
@@ -848,6 +880,28 @@ func (m *Maestro) intelWifiChoice(macosVersion string, needsOCLP bool) ([]string
 	if nativeFork {
 		options = append([]string{"AirportItlwm-laobamac"}, options...)
 	}
+	m.logf("\033[1;93mNote:\033[0m Intel WiFi devices have %d available kext options:\n", len(options))
+	m.logf("\n")
+	if nativeFork {
+		m.logf("1. \033[1mlaobamac AirportItlwm\033[0m - Native WiFi on Sequoia 15.2+ and Tahoe without OCLP root patches\n")
+		m.logf("\n")
+	}
+	airportNum := 1
+	if nativeFork {
+		airportNum = 2
+	}
+	m.logf("%d. \033[1mAirportItlwm\033[0m - Uses native WiFi settings menu\n", airportNum)
+	m.logf("   • Provides Handoff, Universal Clipboard, Location Services, Instant Hotspot support\n")
+	m.logf("   • Supports enterprise-level security\n")
+	if darwin.Major >= 24 {
+		m.logf("   • Requires OCLP root patches on Sequoia and Tahoe but may cause issues\n")
+	}
+	m.logf("\n")
+	m.logf("%d. \033[1mitlwm\033[0m - More stable overall\n", len(options))
+	m.logf("   • Works with HeliPort app instead of native WiFi settings menu\n")
+	m.logf("   • No Apple Continuity features and enterprise-level security\n")
+	m.logf("   • Can connect to Hidden Networks\n")
+	m.logf("\n")
 	recommended := 2
 	if nativeFork || darwin.Major < 23 {
 		recommended = 1
@@ -859,6 +913,7 @@ func (m *Maestro) intelWifiChoice(macosVersion string, needsOCLP bool) ([]string
 	}
 	var selectedName string
 	if strings.Contains(macName, "Beta") && !nativeFork {
+		m.logf("For unsupported macOS Beta versions, only itlwm is supported.\n")
 		selectedName = "itlwm"
 	} else {
 		answer, err := m.input(fmt.Sprintf("Select Intel Wi-Fi kext (default: %s): ", options[recommended-1]))
@@ -874,6 +929,7 @@ func (m *Maestro) intelWifiChoice(macosVersion string, needsOCLP bool) ([]string
 			n, _ = strconv.Atoi(choice)
 		}
 		if !isDigits(choice) || !(1 <= n && n <= len(options)) {
+			m.logf("Invalid selection, using recommended option: %d\n", recommended)
 			choice = strconv.Itoa(recommended)
 			n, _ = strconv.Atoi(choice)
 		}

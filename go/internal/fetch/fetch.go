@@ -59,7 +59,9 @@ func New(out io.Writer) *Fetcher {
 }
 
 func (f *Fetcher) printf(format string, args ...any) {
-	fmt.Fprintf(f.Out, format+"\n", args...)
+	if f.Out != nil {
+		fmt.Fprintf(f.Out, format+"\n", args...)
+	}
 }
 
 // makeRequest mirrors ResourceFetcher._make_request. Any failure prints the
@@ -287,11 +289,17 @@ func (f *Fetcher) writeBody(resp *http.Response, destination string) error {
 			return rerr
 		}
 	}
-	fmt.Fprintln(f.Out)
+	if f.Out != nil {
+		fmt.Fprintln(f.Out)
+	}
 	return nil
 }
 
 func (f *Fetcher) printProgress(speed string, downloaded, total int64) {
+	if f.Out == nil {
+		return
+	}
+	fmt.Fprint(f.Out, strings.Repeat(" ", 80)+"\r")
 	mb := float64(downloaded) / (1024 * 1024)
 	if total > 0 {
 		percent := int(float64(downloaded) / float64(total) * 100)

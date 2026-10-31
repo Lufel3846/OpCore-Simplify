@@ -99,7 +99,9 @@ func New(scriptsDir string, out io.Writer) (*Gatherer, error) {
 }
 
 func (g *Gatherer) printf(format string, args ...any) {
-	fmt.Fprintf(g.Out, format+"\n", args...)
+	if g.Out != nil {
+		fmt.Fprintf(g.Out, format+"\n", args...)
+	}
 }
 
 func (g *Gatherer) requestInput() {

@@ -167,6 +167,16 @@ func ValidatePassword(authType *string, password any) (any, error) {
 	return nil, nil
 }
 
+// validate prints the original's "Validating password" line, then runs ValidatePassword.
+func (e *Extractor) validate(authType *string, password any) (any, error) {
+	shown := "None"
+	if authType != nil {
+		shown = *authType
+	}
+	e.printf("Validating password with authentication type: %s\n", shown)
+	return ValidatePassword(authType, password)
+}
+
 // passwordMacOS mirrors get_wifi_password_macos.
 func (e *Extractor) passwordMacOS(ssid string) (any, error) {
 	out, rc := e.Run([]string{"security", "find-generic-password", "-wa", ssid})
@@ -186,7 +196,7 @@ func (e *Extractor) passwordMacOS(ssid string) (any, error) {
 		password = stripped
 	}
 	wpa := "wpa"
-	return ValidatePassword(&wpa, password)
+	return e.validate(&wpa, password)
 }
 
 // passwordWindows mirrors get_wifi_password_windows: the authentication type is
@@ -213,7 +223,7 @@ func (e *Extractor) passwordWindows(ssid string) (any, error) {
 			password = strings.TrimSpace(part)
 		}
 	}
-	return ValidatePassword(authType, password)
+	return e.validate(authType, password)
 }
 
 // passwordLinux mirrors get_wifi_password_linux: the authentication type is
@@ -240,7 +250,7 @@ func (e *Extractor) passwordLinux(ssid string) (any, error) {
 			password = strings.TrimSpace(part)
 		}
 	}
-	return ValidatePassword(authType, password)
+	return e.validate(authType, password)
 }
 
 // authTypePtr returns the classified authentication type, or nil (Python None).
@@ -262,19 +272,26 @@ func (e *Extractor) AskNetworkCount(total int) (int, error) {
 	}
 	choice = orDefault(choice, "5")
 	if choice == "a" {
+		e.printf("Will process all available networks.\n")
 		return total, nil
+	}
+	invalid := func() (int, error) {
+		m := min(5, total)
+		e.printf("Invalid choice. Will process up to %d networks.\n", m)
+		return m, nil
 	}
 	n, err := pyrt.Int(choice)
 	if err != nil {
-		return min(5, total), nil
+		return invalid()
 	}
 	value, err := pyrt.IntValue(n)
 	if err != nil {
-		return min(5, total), nil
+		return invalid()
 	}
 	if value > int64(total) {
-		return total, nil
+		value = int64(total)
 	}
+	e.printf("Will process up to %d networks.\n", value)
 	return int(value), nil
 }
 
@@ -307,6 +324,10 @@ func (e *Extractor) ProcessNetworks(ssids []string, maxNetworks int, getPassword
 		ssid := ssids[processed]
 		stop := false
 
+		e.printf("\nProcessing %d/%d: %s\n", processed+1, len(ssids), ssid)
+		if darwin {
+			e.printf("Please enter your administrator name and password or click 'Deny' to skip this network.\n")
+		}
 		password, err := getPassword(ssid)
 		if err == nil {
 			if password != nil {
@@ -323,12 +344,14 @@ func (e *Extractor) ProcessNetworks(ssids []string, maxNetworks int, getPassword
 				if !duplicate {
 					consecutive = 0
 					networks = append(networks, Profile{SSID: ssid, Password: text})
+					e.printf("Successfully retrieved password.\n")
 					if len(networks) == maxNetworks {
 						stop = true
 					}
 				}
 			} else {
 				countFailure()
+				e.printf("Could not retrieve password for this network.\n")
 				if consecutive >= maxConsecutiveFailures {
 					giveUp, err := confirmGiveUp()
 					if err != nil {
@@ -339,6 +362,7 @@ func (e *Extractor) ProcessNetworks(ssids []string, maxNetworks int, getPassword
 			}
 		} else {
 			countFailure()
+			e.printf("Error processing network '%s': %s\n", ssid, err.Error())
 			if consecutive >= maxConsecutiveFailures {
 				giveUp, err := confirmGiveUp()
 				if err != nil {
