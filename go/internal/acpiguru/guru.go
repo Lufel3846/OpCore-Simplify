@@ -46,6 +46,15 @@ type Guru struct {
 	// Dsdt is self.dsdt: the table the patches work on.
 	Dsdt *dsdt.Table
 
+	// LPCBusDevice is self.lpc_bus_device (set from GetLPCName before the patches run).
+	LPCBusDevice string
+	// OSIStrings is self.osi_strings, in the original order: label, _OSI string.
+	OSIStrings [][2]string
+	// TargetIRQs is self.target_irqs.
+	TargetIRQs []int
+	// IllegalNames is self.illegal_names.
+	IllegalNames []string
+
 	// RequestInput mirrors utils.request_input.
 	RequestInput func(prompt string) (string, error)
 	// Run mirrors Run.run for one command: stdout, stderr and the return code.
@@ -57,6 +66,20 @@ type Guru struct {
 // New returns a Guru with the patch list of acpi_patch_data, all unchecked.
 func New(acpi *dsdt.DSDT, requestInput func(string) (string, error)) *Guru {
 	g := &Guru{Acpi: acpi, RequestInput: requestInput}
+	g.OSIStrings = [][2]string{
+		{"Windows 2000", "Windows 2000"}, {"Windows XP", "Windows 2001"}, {"Windows XP SP1", "Windows 2001 SP1"},
+		{"Windows Server 2003", "Windows 2001.1"}, {"Windows XP SP2", "Windows 2001 SP2"},
+		{"Windows Server 2003 SP1", "Windows 2001.1 SP1"}, {"Windows Vista", "Windows 2006"},
+		{"Windows Vista SP1", "Windows 2006 SP1"}, {"Windows Server 2008", "Windows 2006.1"},
+		{"Windows 7, Win Server 2008 R2", "Windows 2009"}, {"Windows 8, Win Server 2012", "Windows 2012"},
+		{"Windows 8.1", "Windows 2013"}, {"Windows 10", "Windows 2015"}, {"Windows 10, version 1607", "Windows 2016"},
+		{"Windows 10, version 1703", "Windows 2017"}, {"Windows 10, version 1709", "Windows 2017.2"},
+		{"Windows 10, version 1803", "Windows 2018"}, {"Windows 10, version 1809", "Windows 2018.2"},
+		{"Windows 10, version 1903", "Windows 2019"}, {"Windows 10, version 2004", "Windows 2020"},
+		{"Windows 11", "Windows 2021"}, {"Windows 11, version 22H2", "Windows 2022"},
+	}
+	g.TargetIRQs = []int{0, 2, 8, 11}
+	g.IllegalNames = []string{"XHC1", "EHC1", "EHC2", "PXSX"}
 	for _, p := range datasets.ACPIPatches {
 		g.Patches = append(g.Patches, &Patch{ACPIPatchInfo: p})
 	}
