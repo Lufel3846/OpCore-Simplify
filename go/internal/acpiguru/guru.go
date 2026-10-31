@@ -61,6 +61,9 @@ type Guru struct {
 	Run func(args []string) (stdout, stderr string, returnCode int)
 	// Log receives what the original prints. Nil discards it.
 	Log io.Writer
+	// RandomMAC mirrors self.smbios.generate_random_mac (six random bytes in
+	// uppercase hex). Nil uses math/rand.
+	RandomMAC func() string
 }
 
 // New returns a Guru with the patch list of acpi_patch_data, all unchecked.
