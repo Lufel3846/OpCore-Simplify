@@ -283,7 +283,7 @@ Todos os módulos do projeto original têm agora um equivalente em Go, e `go run
 Pontos já conhecidos para a fase Beta:
 
 1. `fix_apic_processor_id` chama `dropping_the_table("APIC")` com `str`, e o original levanta `TypeError`; o Go reproduz o erro (o patch APIC falha em CPUs HEDT, igual ao Python).
-2. `updater.py` (auto-atualização do script) não foi portado. Não há download automático do `iasl`: se faltar, o programa termina como o original quando não consegue baixá-lo.
+2. `updater.py` (auto-atualização do script) não foi portado. O download automático do `iasl` foi portado (`internal/app/iasl.go`) e ainda não foi exercitado de verdade.
 3. `efi.Builder` não tem a barra de progresso por etapa; os textos de tela (`head`) não limpam a tela.
 4. Os adaptadores `acpiguru.Patch` → `kextmaestro.ACPIPatch` copiam o estado em cada chamada.
 5. Binários reais (`macserial`, `iasl`, `netsh`, `nmcli`, `networksetup`, `security`) nunca foram executados aqui.

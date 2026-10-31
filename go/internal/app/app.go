@@ -84,7 +84,7 @@ func New() (*App, error) {
 	out := a.U.Out
 	in := a.U.RequestInput
 
-	iasl := dsdt.IaslFinder{ScriptDir: scripts, Platform: pyPlatform(), Log: out}.Check(false)
+	iasl := dsdt.IaslFinder{ScriptDir: scripts, Platform: pyPlatform(), Log: out, Download: a.downloadIasl(scripts)}.Check(false)
 	if iasl == "" {
 		return nil, dsdt.MissingIaslError(scripts, pyPlatform())
 	}
